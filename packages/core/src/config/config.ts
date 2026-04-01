@@ -240,6 +240,10 @@ export interface GemmaModelRouterSettings {
   };
 }
 
+export interface ADKSettings {
+  agentSessionNoninteractiveEnabled?: boolean;
+}
+
 export interface ExtensionSetting {
   name: string;
   description: string;
@@ -677,6 +681,7 @@ export interface ConfigParameters {
   policyUpdateConfirmationRequest?: PolicyUpdateConfirmationRequest;
   output?: OutputSettings;
   gemmaModelRouter?: GemmaModelRouterSettings;
+  adk?: ADKSettings;
   disableModelRouterForAuth?: AuthType[];
   continueOnFailedApiCall?: boolean;
   retryFetchErrors?: boolean;
@@ -900,6 +905,7 @@ export class Config implements McpContext, AgentLoopContext {
   private readonly outputSettings: OutputSettings;
 
   private readonly gemmaModelRouter: GemmaModelRouterSettings;
+  private readonly agentSessionNoninteractiveEnabled: boolean;
 
   private readonly continueOnFailedApiCall: boolean;
   private readonly retryFetchErrors: boolean;
@@ -1319,6 +1325,9 @@ export class Config implements McpContext, AgentLoopContext {
           params.gemmaModelRouter?.classifier?.model ?? 'gemma3-1b-gpu-custom',
       },
     };
+
+    this.agentSessionNoninteractiveEnabled =
+      params.adk?.agentSessionNoninteractiveEnabled ?? false;
     this.retryFetchErrors = params.retryFetchErrors ?? true;
     this.maxAttempts = Math.min(
       params.maxAttempts ?? DEFAULT_MAX_ATTEMPTS,
@@ -3375,6 +3384,10 @@ export class Config implements McpContext, AgentLoopContext {
 
   getGemmaModelRouterSettings(): GemmaModelRouterSettings {
     return this.gemmaModelRouter;
+  }
+
+  getAgentSessionNoninteractiveEnabled(): boolean {
+    return this.agentSessionNoninteractiveEnabled;
   }
 
   /**
