@@ -183,7 +183,7 @@ public class GeminiSandbox {
         }
 
         if (argIndex >= args.Length) {
-            Console.WriteLine("Error: Missing command");
+            Console.Error.WriteLine("Error: Missing command");
             return 1;
         }
 
@@ -196,13 +196,13 @@ public class GeminiSandbox {
         try {
             // 1. Duplicate Primary Token
             if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ALL_ACCESS, out hToken)) {
-                Console.WriteLine("Error: OpenProcessToken failed (" + Marshal.GetLastWin32Error() + ")");
+                Console.Error.WriteLine("Error: OpenProcessToken failed (" + Marshal.GetLastWin32Error() + ")");
                 return 1;
             }
 
             // Create a restricted token to strip administrative privileges
             if (!CreateRestrictedToken(hToken, DISABLE_MAX_PRIVILEGE, 0, IntPtr.Zero, 0, IntPtr.Zero, 0, IntPtr.Zero, out hRestrictedToken)) {
-                Console.WriteLine("Error: CreateRestrictedToken failed (" + Marshal.GetLastWin32Error() + ")");
+                Console.Error.WriteLine("Error: CreateRestrictedToken failed (" + Marshal.GetLastWin32Error() + ")");
                 return 1;
             }
 
@@ -217,7 +217,7 @@ public class GeminiSandbox {
                 try {
                     Marshal.StructureToPtr(tml, pTml, false);
                     if (!SetTokenInformation(hRestrictedToken, TokenIntegrityLevel, pTml, (uint)tmlSize)) {
-                        Console.WriteLine("Error: SetTokenInformation failed (" + Marshal.GetLastWin32Error() + ")");
+                        Console.Error.WriteLine("Error: SetTokenInformation failed (" + Marshal.GetLastWin32Error() + ")");
                         return 1;
                     }
                 } finally {
@@ -250,7 +250,7 @@ public class GeminiSandbox {
             // 4. Handle Internal Commands or External Process
             if (command == "__read") {
                 if (argIndex + 1 >= args.Length) {
-                    Console.WriteLine("Error: Missing path for __read");
+                    Console.Error.WriteLine("Error: Missing path for __read");
                     return 1;
                 }
                 string path = args[argIndex + 1];
@@ -269,7 +269,7 @@ public class GeminiSandbox {
                 });
             } else if (command == "__write") {
                 if (argIndex + 1 >= args.Length) {
-                    Console.WriteLine("Error: Missing path for __write");
+                    Console.Error.WriteLine("Error: Missing path for __write");
                     return 1;
                 }
                 string path = args[argIndex + 1];
@@ -304,14 +304,18 @@ public class GeminiSandbox {
             }
 
             PROCESS_INFORMATION pi = new PROCESS_INFORMATION();
-            // Creation Flags: 0x04000000 (CREATE_BREAKAWAY_FROM_JOB) to allow job assignment if parent is in job
-            uint creationFlags = 0;
+            // Creation Flags: 0x01000000 (CREATE_BREAKAWAY_FROM_JOB) to allow job assignment if parent is in job
+            uint creationFlags = 0x01000000;
             if (!CreateProcessAsUser(hRestrictedToken, null, commandLine, IntPtr.Zero, IntPtr.Zero, true, creationFlags, IntPtr.Zero, cwd, ref si, out pi)) {
-                Console.WriteLine("Error: CreateProcessAsUser failed (" + Marshal.GetLastWin32Error() + ") Command: " + commandLine);
+                Console.Error.WriteLine("Error: CreateProcessAsUser failed (" + Marshal.GetLastWin32Error() + ") Command: " + commandLine);
                 return 1;
             }
 
-            AssignProcessToJobObject(hJob, pi.hProcess);
+            if (!AssignProcessToJobObject(hJob, pi.hProcess)) {
+                Console.Error.WriteLine("Error: AssignProcessToJobObject failed (" + Marshal.GetLastWin32Error() + ")");
+                TerminateProcess(pi.hProcess, 1);
+                return 1;
+            }
             
             // Wait for exit
             uint waitResult = WaitForSingleObject(pi.hProcess, 0xFFFFFFFF);
@@ -330,6 +334,9 @@ public class GeminiSandbox {
     }
 
     [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool TerminateProcess(IntPtr hProcess, uint uExitCode);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
     static extern uint WaitForSingleObject(IntPtr hHandle, uint dwMilliseconds);
 
     [DllImport("kernel32.dll", SetLastError = true)]
@@ -337,7 +344,7 @@ public class GeminiSandbox {
 
     private static int RunInImpersonation(IntPtr hToken, Func<int> action) {
         if (!ImpersonateLoggedOnUser(hToken)) {
-            Console.WriteLine("Error: ImpersonateLoggedOnUser failed (" + Marshal.GetLastWin32Error() + ")");
+            Console.Error.WriteLine("Error: ImpersonateLoggedOnUser failed (" + Marshal.GetLastWin32Error() + ")");
             return 1;
         }
         try {
