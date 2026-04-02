@@ -28,7 +28,15 @@ exports[`ContextManager Golden Tests > should process history and match golden s
         "functionResponse": {
           "name": "some_tool",
           "response": {
-            "output": "[Tool output (8500 chars) was automatically masked to preserve context window. Ensure you rely on the initial analysis or re-run if explicitly required.]",
+            "output": "<tool_output_masked>
+{
+  "output": "TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DA
+... [TRUNCATED] ...
+PUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA "
+}
+
+Output too large. Full output available at: /tmp/tool-outputs/session-mock-session/some_tool_1775088000000_.txt
+</tool_output_masked>",
           },
         },
       },

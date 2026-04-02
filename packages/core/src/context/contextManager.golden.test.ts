@@ -1,18 +1,29 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
 import { ContextManager } from './contextManager.js';
 import type { Content } from '@google/genai';
 import { ToolMaskingProcessor } from './processors/toolMaskingProcessor.js';
 import { HistorySquashingProcessor } from './processors/historySquashingProcessor.js';
 import { SemanticCompressionProcessor } from './processors/semanticCompressionProcessor.js';
-import { ContextCompressionService } from './contextCompressionService.js';
 
 describe('ContextManager Golden Tests', () => {
+  beforeAll(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 3, 2).getTime());
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
+  });
+
+  afterAll(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
   let mockConfig: any;
   let contextManager: ContextManager;
 
   beforeEach(() => {
     mockConfig = {
       isContextManagementEnabled: vi.fn().mockReturnValue(true),
+      getToolOutputMaskingConfig: vi.fn().mockResolvedValue({ enabled: true, minPrunableThresholdTokens: 50, protectLatestTurn: false, protectionThresholdTokens: 100 }),
       getContextManagementConfig: vi.fn().mockReturnValue({
         historyWindow: { maxTokens: 1000, retainedTokens: 500 },
         messageLimits: { normalMaxTokens: 100, retainedMaxTokens: 50, normalizationHeadRatio: 0.1 },
@@ -21,6 +32,8 @@ describe('ContextManager Golden Tests', () => {
         }
       }),
       storage: { getProjectTempDir: vi.fn().mockReturnValue('/tmp') },
+      getSessionId: vi.fn().mockReturnValue('mock-session'),
+      getUsageStatisticsEnabled: vi.fn().mockReturnValue(false),
       getBaseLlmClient: vi.fn().mockReturnValue({
         generateJson: vi.fn().mockResolvedValue({
            'test_file.txt': { level: 'SUMMARY' }
@@ -35,7 +48,7 @@ describe('ContextManager Golden Tests', () => {
     contextManager.setProcessors([
       new ToolMaskingProcessor(mockConfig),
       new HistorySquashingProcessor(mockConfig),
-      new SemanticCompressionProcessor(new ContextCompressionService(mockConfig))
+      new SemanticCompressionProcessor(mockConfig)
     ]);
   });
 

@@ -49,7 +49,6 @@ import { ContextManager } from '../context/contextManager.js';
 import { ToolMaskingProcessor } from '../context/processors/toolMaskingProcessor.js';
 import { HistorySquashingProcessor } from '../context/processors/historySquashingProcessor.js';
 import { SemanticCompressionProcessor } from '../context/processors/semanticCompressionProcessor.js';
-import { ContextCompressionService } from '../context/contextCompressionService.js';
 import { ideContextStore } from '../ide/ideContext.js';
 import {
   logContentRetryFailure,
@@ -121,7 +120,7 @@ export class GeminiClient {
     this.contextManager.setProcessors([
       new ToolMaskingProcessor(this.config),
       new HistorySquashingProcessor(this.config),
-      new SemanticCompressionProcessor(new ContextCompressionService(this.config))
+      new SemanticCompressionProcessor(this.config)
     ]);
     this.toolOutputMaskingService = new ToolOutputMaskingService();
     this.lastPromptId = this.config.getSessionId();
