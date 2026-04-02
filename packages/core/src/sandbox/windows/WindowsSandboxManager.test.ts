@@ -29,12 +29,36 @@ describe('WindowsSandboxManager', () => {
   let manager: WindowsSandboxManager;
   let testCwd: string;
 
+  /**
+   * Creates a temporary directory and returns its canonical real path.
+   */
+  function createTempDir(name: string, parent = os.tmpdir()): string {
+    const rawPath = fs.mkdtempSync(path.join(parent, `gemini-test-${name}-`));
+    return fs.realpathSync(rawPath);
+  }
+
+  const helperExePath = path.resolve(
+    __dirname,
+    WindowsSandboxManager.HELPER_EXE,
+  );
+
   beforeEach(() => {
     vi.spyOn(os, 'platform').mockReturnValue('win32');
     vi.spyOn(sandboxManager, 'tryRealpath').mockImplementation(async (p) =>
       p.toString(),
     );
-    testCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'gemini-cli-test-'));
+
+    // Mock existsSync to skip the csc.exe auto-compilation of helper during unit tests.
+    const originalExistsSync = fs.existsSync;
+    vi.spyOn(fs, 'existsSync').mockImplementation((p) => {
+      if (typeof p === 'string' && path.resolve(p) === helperExePath) {
+        return true;
+      }
+      return originalExistsSync(p);
+    });
+
+    testCwd = createTempDir('cwd');
+
     manager = new WindowsSandboxManager({
       workspace: testCwd,
       modeConfig: { readonly: false, allowOverrides: true },
@@ -44,7 +68,9 @@ describe('WindowsSandboxManager', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    fs.rmSync(testCwd, { recursive: true, force: true });
+    if (testCwd && fs.existsSync(testCwd)) {
+      fs.rmSync(testCwd, { recursive: true, force: true });
+    }
   });
 
   it('should prepare a GeminiSandbox.exe command', async () => {
@@ -154,8 +180,7 @@ describe('WindowsSandboxManager', () => {
   });
 
   it('should handle persistent permissions from policyManager', async () => {
-    const persistentPath = path.join(testCwd, 'persistent_path');
-    fs.mkdirSync(persistentPath, { recursive: true });
+    const persistentPath = createTempDir('persistent', testCwd);
 
     const mockPolicyManager = {
       getCommandPermissions: vi.fn().mockReturnValue({
@@ -235,10 +260,7 @@ describe('WindowsSandboxManager', () => {
   });
 
   it('should grant Low Integrity access to the workspace and allowed paths', async () => {
-    const allowedPath = path.join(os.tmpdir(), 'gemini-cli-test-allowed');
-    if (!fs.existsSync(allowedPath)) {
-      fs.mkdirSync(allowedPath);
-    }
+    const allowedPath = createTempDir('allowed');
     try {
       const req: SandboxRequest = {
         command: 'test',
@@ -258,7 +280,7 @@ describe('WindowsSandboxManager', () => {
         .map((c) => c[1]);
 
       expect(icaclsArgs).toContainEqual([
-        path.resolve(testCwd),
+        testCwd,
         '/grant',
         '*S-1-16-4096:(OI)(CI)(M)',
         '/setintegritylevel',
@@ -266,7 +288,7 @@ describe('WindowsSandboxManager', () => {
       ]);
 
       expect(icaclsArgs).toContainEqual([
-        path.resolve(allowedPath),
+        allowedPath,
         '/grant',
         '*S-1-16-4096:(OI)(CI)(M)',
         '/setintegritylevel',
@@ -278,13 +300,7 @@ describe('WindowsSandboxManager', () => {
   });
 
   it('should grant Low Integrity access to additional write paths', async () => {
-    const extraWritePath = path.join(
-      os.tmpdir(),
-      'gemini-cli-test-extra-write',
-    );
-    if (!fs.existsSync(extraWritePath)) {
-      fs.mkdirSync(extraWritePath);
-    }
+    const extraWritePath = createTempDir('extra-write');
     try {
       const req: SandboxRequest = {
         command: 'test',
@@ -308,7 +324,7 @@ describe('WindowsSandboxManager', () => {
         .map((c) => c[1]);
 
       expect(icaclsArgs).toContainEqual([
-        path.resolve(extraWritePath),
+        extraWritePath,
         '/grant',
         '*S-1-16-4096:(OI)(CI)(M)',
         '/setintegritylevel',
@@ -426,15 +442,12 @@ describe('WindowsSandboxManager', () => {
     expect(spawnAsync).not.toHaveBeenCalledWith('icacls', [
       path.resolve(missingPath),
       '/deny',
-      '*S-1-16-4096:(OI)(CI)(M)',
+      '*S-1-16-4096:(OI)(CI)(F)',
     ]);
   });
 
   it('should deny Low Integrity access to forbidden paths', async () => {
-    const forbiddenPath = path.join(os.tmpdir(), 'gemini-cli-test-forbidden');
-    if (!fs.existsSync(forbiddenPath)) {
-      fs.mkdirSync(forbiddenPath);
-    }
+    const forbiddenPath = createTempDir('forbidden');
     try {
       const managerWithForbidden = new WindowsSandboxManager({
         workspace: testCwd,
@@ -451,7 +464,7 @@ describe('WindowsSandboxManager', () => {
       await managerWithForbidden.prepareCommand(req);
 
       expect(spawnAsync).toHaveBeenCalledWith('icacls', [
-        path.resolve(forbiddenPath),
+        forbiddenPath,
         '/deny',
         '*S-1-16-4096:(OI)(CI)(F)',
       ]);
@@ -461,10 +474,7 @@ describe('WindowsSandboxManager', () => {
   });
 
   it('should override allowed paths if a path is also in forbidden paths', async () => {
-    const conflictPath = path.join(os.tmpdir(), 'gemini-cli-test-conflict');
-    if (!fs.existsSync(conflictPath)) {
-      fs.mkdirSync(conflictPath);
-    }
+    const conflictPath = createTempDir('conflict');
     try {
       const managerWithForbidden = new WindowsSandboxManager({
         workspace: testCwd,
@@ -489,14 +499,14 @@ describe('WindowsSandboxManager', () => {
           call[1] &&
           call[1].includes('/setintegritylevel') &&
           call[0] === 'icacls' &&
-          call[1][0] === path.resolve(conflictPath),
+          call[1][0] === conflictPath,
       );
       const denyCallIndex = spawnMock.mock.calls.findIndex(
         (call) =>
           call[1] &&
           call[1].includes('/deny') &&
           call[0] === 'icacls' &&
-          call[1][0] === path.resolve(conflictPath),
+          call[1][0] === conflictPath,
       );
 
       // Conflict should have been filtered out of allow calls
