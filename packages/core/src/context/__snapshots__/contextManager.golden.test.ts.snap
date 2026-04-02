@@ -29,13 +29,7 @@ exports[`ContextManager Golden Tests > should process history and match golden s
           "name": "some_tool",
           "response": {
             "output": "<tool_output_masked>
-{
-  "output": "TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DA
-... [TRUNCATED] ...
-PUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA TOOL OUTPUT DATA "
-}
-
-Output too large. Full output available at: /tmp/tool-outputs/session-mock-session/some_tool_1775088000000_.txt
+[Tool output (0.01MB, 3 lines) masked to preserve context window. Full output saved to: /tmp/tool-outputs/session-mock-session/some_tool_1775088000000_.txt]
 </tool_output_masked>",
           },
         },
