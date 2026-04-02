@@ -4,13 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export interface AgentHistoryProviderConfig {
-  maxTokens: number;
-  retainedTokens: number;
-  normalMessageTokens: number;
-  maximumMessageTokens: number;
-  normalizationHeadRatio: number;
-}
+
 
 export interface ToolOutputMaskingConfig {
   protectionThresholdTokens: number;

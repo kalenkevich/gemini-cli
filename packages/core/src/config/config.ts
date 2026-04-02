@@ -12,7 +12,6 @@ import process from 'node:process';
 import { z } from 'zod';
 import type { ConversationRecord } from '../services/chatRecordingService.js';
 import type {
-  AgentHistoryProviderConfig,
   ContextManagementConfig,
   ToolOutputMaskingConfig,
 } from '../context/types.js';
@@ -2391,17 +2390,7 @@ export class Config implements McpContext, AgentLoopContext {
     return this.contextManagement;
   }
 
-  get agentHistoryProviderConfig(): AgentHistoryProviderConfig {
-    return {
-      maxTokens: this.contextManagement.historyWindow.maxTokens,
-      retainedTokens: this.contextManagement.historyWindow.retainedTokens,
-      normalMessageTokens: this.contextManagement.messageLimits.normalMaxTokens,
-      maximumMessageTokens:
-        this.contextManagement.messageLimits.retainedMaxTokens,
-      normalizationHeadRatio:
-        this.contextManagement.messageLimits.normalizationHeadRatio,
-    };
-  }
+  
 
   isTopicUpdateNarrationEnabled(): boolean {
     return this.topicUpdateNarration;
