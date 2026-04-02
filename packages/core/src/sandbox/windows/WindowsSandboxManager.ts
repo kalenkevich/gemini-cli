@@ -76,6 +76,10 @@ export class WindowsSandboxManager implements SandboxManager {
     return parseWindowsSandboxDenials(result);
   }
 
+  getWorkspace(): string {
+    return this.options.workspace;
+  }
+
   /**
    * Ensures a file or directory exists.
    */
@@ -244,6 +248,8 @@ export class WindowsSandboxManager implements SandboxManager {
       ];
     }
 
+    const isYolo = this.options.modeConfig?.yolo ?? false;
+
     // Fetch persistent approvals for this command
     const commandName = await getCommandName(command, args);
     const persistentPermissions = allowOverrides
@@ -263,6 +269,7 @@ export class WindowsSandboxManager implements SandboxManager {
         ],
       },
       network:
+        isYolo ||
         persistentPermissions?.network ||
         req.policy?.additionalPermissions?.network ||
         false,
