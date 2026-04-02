@@ -711,7 +711,7 @@ describe('Gemini Client (client.ts)', () => {
   });
 
   describe('sendMessageStream', () => {
-    it('calls AgentHistoryProvider.manageHistory when history truncation is enabled', async () => {
+    it('calls ContextManager.processHistory when context management is enabled', async () => {
       // Arrange
       mockConfig.getContextManagementConfig = vi
         .fn()
@@ -719,8 +719,8 @@ describe('Gemini Client (client.ts)', () => {
       const manageHistorySpy = vi
         .spyOn(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (client as any).agentHistoryProvider,
-          'manageHistory',
+          (client as any).contextManager,
+          'processHistory',
         )
         .mockResolvedValue([
           { role: 'user', parts: [{ text: 'preserved message' }] },
@@ -744,7 +744,6 @@ describe('Gemini Client (client.ts)', () => {
       // Assert
       expect(manageHistorySpy).toHaveBeenCalledWith(
         expect.any(Array),
-        expect.any(AbortSignal),
       );
     });
 
