@@ -1,3 +1,4 @@
+import { ToolOutputMaskingService } from '../context/toolOutputMaskingService.js';
 /**
  * @license
  * Copyright 2025 Google LLC
@@ -69,7 +70,6 @@ import { handleFallback } from '../fallback/handler.js';
 import type { RoutingContext } from '../routing/routingStrategy.js';
 import { debugLogger } from '../utils/debugLogger.js';
 import type { ModelConfigKey } from '../services/modelConfigService.js';
-import { ToolOutputMaskingService } from '../context/toolOutputMaskingService.js';
 import { calculateRequestTokenCount } from '../utils/tokenCalculation.js';
 import {
   applyModelSelection,
@@ -642,7 +642,9 @@ export class GeminiClient {
     const remainingTokenCount =
       tokenLimit(modelForLimitCheck) - this.getChat().getLastPromptTokenCount();
 
-    await this.tryMaskToolOutputs(this.getHistory());
+    if (!this.config.getContextManagementConfig().enabled) {
+      await this.tryMaskToolOutputs(this.getHistory());
+    }
 
     // Estimate tokens. For text-only requests, we estimate based on character length.
     // For requests with non-text parts (like images, tools), we use the countTokens API.

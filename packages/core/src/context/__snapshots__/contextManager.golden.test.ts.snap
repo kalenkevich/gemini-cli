@@ -1,0 +1,51 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`ContextManager Golden Tests > should process history and match golden snapshot 1`] = `
+[
+  {
+    "parts": [
+      {
+        "text": "A long long time ago, A long long time ago, A long long time ago, A long long time ago, A long long time ago, A long long time ago, A long long time ago, A long long time ago, A long long time ago, A 
+
+[... OMITTED 10800 chars ...]
+
+",
+      },
+    ],
+    "role": "user",
+  },
+  {
+    "parts": [
+      {
+        "text": "in a galaxy far far away...",
+      },
+    ],
+    "role": "model",
+  },
+  {
+    "parts": [
+      {
+        "functionResponse": {
+          "name": "some_tool",
+          "response": {
+            "output": "[Tool output (8500 chars) was automatically masked to preserve context window. Ensure you rely on the initial analysis or re-run if explicitly required.]",
+          },
+        },
+      },
+    ],
+    "role": "user",
+  },
+  {
+    "parts": [
+      {
+        "text": "--- test_file.txt ---FILE DATA FILE DATA FILE DATA FILE DATA FILE DATA FILE DATA FILE DATA FILE DATA FILE DATA FILE DATA FILE DATA FILE DATA FILE DATA FILE DATA FILE DATA FILE DATA FILE DATA FILE DATA
+
+[... OMITTED 9822 chars ...]
+
+",
+      },
+    ],
+    "role": "user",
+  },
+]
+`;
