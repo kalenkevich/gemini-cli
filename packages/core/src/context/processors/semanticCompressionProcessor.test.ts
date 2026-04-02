@@ -5,6 +5,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SemanticCompressionProcessor } from './semanticCompressionProcessor.js';
+import { IrMapper } from '../ir/mapper.js';
 import type { Config } from '../../config/config.js';
 import type { Content } from '@google/genai';
 import * as fsSync from 'node:fs';
@@ -58,8 +59,8 @@ describe('SemanticCompressionProcessor', () => {
       const history: Content[] = [{ role: 'user', parts: [{ text: 'hello' }] }];
       const state = { ...getDummyState(), isBudgetSatisfied: true };
 
-      const res = await processor.process(history, state);
-      expect(res.history).toStrictEqual(history);
+      const res = await processor.process(IrMapper.toIr(history), state);
+      expect(IrMapper.fromIr(res.episodes)).toStrictEqual(history);
     });
 
     it('protects files that were read within the RECENT_TURNS_PROTECTED window', async () => {
@@ -125,11 +126,11 @@ describe('SemanticCompressionProcessor', () => {
         },
       ];
 
-      const res = await processor.process(history, getDummyState());
+      const res = await processor.process(IrMapper.toIr(history), getDummyState());
 
       // Because src/app.ts was re-read recently, the OLD response is PROTECTED.
       const compressedOutput =
-        res.history[1].parts![0].functionResponse!.response!['output'];
+        IrMapper.fromIr(res.episodes)[1].parts![0].functionResponse!.response!['output'];
       expect(compressedOutput).toBe(
         '--- src/app.ts ---\nLine 1\nLine 2\nLine 3',
       );
@@ -178,9 +179,9 @@ describe('SemanticCompressionProcessor', () => {
         },
       });
 
-      const res = await processor.process(history, getDummyState());
+      const res = await processor.process(IrMapper.toIr(history), getDummyState());
       const compressedOutput =
-        res.history[1].parts![0].functionResponse!.response!['output'];
+        IrMapper.fromIr(res.episodes)[1].parts![0].functionResponse!.response!['output'];
 
       expect(compressedOutput).toContain('[Showing lines 2–3 of 4 in old.ts.');
       expect(compressedOutput).toContain('2 | Line 2');
@@ -230,7 +231,7 @@ describe('SemanticCompressionProcessor', () => {
         ],
       });
 
-      await processor.process(history1, getDummyState());
+      await processor.process(IrMapper.toIr(history1), getDummyState());
       expect(generateJsonMock).toHaveBeenCalledTimes(1);
       expect(generateContentMock).toHaveBeenCalledTimes(1);
 
@@ -244,7 +245,7 @@ describe('SemanticCompressionProcessor', () => {
         'src/index.ts': { level: 'SUMMARY' },
       });
 
-      await processor.process(history2, getDummyState());
+      await processor.process(IrMapper.toIr(history2), getDummyState());
 
       expect(generateJsonMock).toHaveBeenCalledTimes(1);
       expect(generateContentMock).toHaveBeenCalledTimes(1);

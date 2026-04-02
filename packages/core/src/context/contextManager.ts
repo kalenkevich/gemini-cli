@@ -8,6 +8,8 @@ import type { Config } from '../config/config.js';
 import type { GeminiClient } from '../core/client.js';
 import type { ContextAccountingState, ContextProcessor } from './pipeline.js';
 import { debugLogger } from '../utils/debugLogger.js';
+import { IrMapper } from './ir/mapper.js';
+import type { Episode } from './ir/types.js';
 
 export class ContextManager {
   private config: Config;
@@ -38,8 +40,9 @@ export class ContextManager {
     const maxTokens = mngConfig.historyWindow.maxTokens;
     const retainedTokens = mngConfig.historyWindow.retainedTokens;
 
-    // Check initial budget
-    let currentTokens = this.estimateTokens(history);
+    let currentEpisodes = IrMapper.toIr(history);
+    let currentTokens = this.estimateTokens(currentEpisodes);
+    
     if (currentTokens <= maxTokens) {
       return history; // Well under the high-water mark, do nothing.
     }
@@ -48,17 +51,14 @@ export class ContextManager {
       `Context Manager triggered: Context window at ${currentTokens} tokens (limit: ${maxTokens}, target: ${retainedTokens}).`,
     );
 
-    let currentHistory = history;
-
     for (const processor of this.processors) {
-      // Calculate buffer zones dynamically. For V0, we use heuristics.
-      // E.g., Front buffer is the last N turns.
-      const protectedTurns = mngConfig.tools?.outputMasking?.protectLatestTurn
-        ? 2
+      // Calculate buffer zones dynamically in terms of Episodes
+      const protectedEpisodes = mngConfig.tools?.outputMasking?.protectLatestTurn
+        ? 1
         : 0;
       const frontBufferStartIndex = Math.max(
         0,
-        currentHistory.length - protectedTurns,
+        currentEpisodes.length - protectedEpisodes,
       );
       // Back buffer is everything else.
       const backBufferEndIndex = Math.max(0, frontBufferStartIndex - 1);
@@ -78,9 +78,9 @@ export class ContextManager {
       }
 
       debugLogger.log(`Running ContextProcessor: ${processor.name}`);
-      const result = await processor.process(currentHistory, state);
+      const result = await processor.process(currentEpisodes, state);
 
-      currentHistory = result.history;
+      currentEpisodes = result.episodes;
 
       if (result.savedTokens > 0) {
         currentTokens = Math.max(0, currentTokens - result.savedTokens);
@@ -91,25 +91,28 @@ export class ContextManager {
     }
 
     // Final sanity check
-    const finalTokens = this.estimateTokens(currentHistory);
+    const finalTokens = this.estimateTokens(currentEpisodes);
     debugLogger.log(
       `Context Manager finished. Final actual token count: ${finalTokens}.`,
     );
 
-    return currentHistory;
+    return IrMapper.fromIr(currentEpisodes);
   }
 
-  private estimateTokens(history: Content[]): number {
+  private estimateTokens(episodes: Episode[]): number {
     let chars = 0;
-    for (const turn of history) {
-      if (!turn.parts) continue;
-      for (const part of turn.parts) {
-        if (part.text) chars += part.text.length;
-        const responseOutput = part.functionResponse?.response?.['output'];
-        if (typeof responseOutput === 'string') {
-          chars += responseOutput.length;
+    for (const ep of episodes) {
+      if (ep.trigger.type === 'USER_PROMPT') chars += ep.trigger.text.length;
+      for (const step of ep.steps) {
+        if (step.type === 'AGENT_THOUGHT') chars += step.text.length;
+        if (step.type === 'TOOL_EXECUTION') {
+          const obs = step.observation;
+          if (typeof obs === 'object' && obs && typeof obs['output'] === 'string') {
+            chars += obs['output'].length;
+          }
         }
       }
+      if (ep.yield) chars += ep.yield.text.length;
     }
     return Math.floor(chars / 4);
   }

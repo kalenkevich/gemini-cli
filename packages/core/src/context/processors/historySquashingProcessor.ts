@@ -3,14 +3,14 @@
  * Copyright 2026 Google LLC
  * SPDX-License-Identifier: Apache-2.0
  */
-import type { Content } from '@google/genai';
+import type { Episode } from '../ir/types.js';
 import type {
   ContextAccountingState,
   ContextProcessor,
   ContextProcessorResult,
 } from '../pipeline.js';
 import type { Config } from '../../config/config.js';
-import { truncateString } from '../../utils/textUtils.js';
+import { truncateProportionally } from '../truncation.js';
 
 export class HistorySquashingProcessor implements ContextProcessor {
   readonly name = 'HistorySquashing';
@@ -21,55 +21,50 @@ export class HistorySquashingProcessor implements ContextProcessor {
   }
 
   async process(
-    history: Content[],
+    episodes: Episode[],
     state: ContextAccountingState,
   ): Promise<ContextProcessorResult> {
-    if (state.isBudgetSatisfied) {
-      return { history, savedTokens: 0 };
+        if (state.isBudgetSatisfied) {
+      return { episodes, savedTokens: 0 };
     }
 
-    const { retainedMaxTokens, normalizationHeadRatio } =
+    const { normalMaxTokens, retainedMaxTokens, normalizationHeadRatio } =
       this.config.getContextManagementConfig().messageLimits;
 
-    // Fallbacks if not perfectly configured
-    const limit = retainedMaxTokens || 3000;
+    const limit = state.backBufferEndIndex >= 0 ? retainedMaxTokens : normalMaxTokens;
     const ratio = normalizationHeadRatio || 0.15;
     void ratio; // satisfy linter
 
     let savedTokensEstimate = 0;
-    const newHistory = [...history];
+    const newEpisodes = [...episodes];
 
     for (let i = 0; i <= state.backBufferEndIndex; i++) {
-      const msg = newHistory[i];
-      if (!msg.parts) continue;
+      const ep = newEpisodes[i];
+      if (!ep) continue;
 
-      let hasModifications = false;
-      const normalizedParts = msg.parts.map((part) => {
-        if (part.text && part.text.length > limit * 4) {
-          // Fast heuristic string-length check
-          const originalLength = part.text.length;
-          hasModifications = true;
-
-          const newText = truncateString(
-            part.text,
-            limit * 4,
-            `\n\n[... OMITTED ${originalLength - limit * 4} chars ...]\n\n`,
-          );
-          savedTokensEstimate += Math.floor(
-            (originalLength - newText.length) / 4,
-          );
-          return { ...part, text: newText };
+      if (ep.trigger.type === 'USER_PROMPT') {
+        const text = ep.trigger.text;
+        const originalLength = text.length;
+        if (originalLength > limit * 4) {
+          const truncated = truncateProportionally(text, limit * 4, `\n\n[... OMITTED ${originalLength - limit * 4} chars ...]\n\n`);
+          if (truncated !== text) {
+            ep.trigger.text = truncated;
+            if (ep.trigger.parts) {
+               ep.trigger.parts = [{ text: truncated }]; // override parts for mapping
+            }
+            savedTokensEstimate += Math.floor((originalLength - truncated.length) / 4);
+            ep.trigger.metadata.transformations.push({
+              processorName: 'HistorySquashing',
+              action: 'TRUNCATED',
+              timestamp: Date.now()
+            });
+          }
         }
-        return part;
-      });
-
-      if (hasModifications) {
-        newHistory[i] = { role: msg.role, parts: normalizedParts };
       }
     }
 
     return {
-      history: newHistory,
+      episodes: newEpisodes,
       savedTokens: savedTokensEstimate,
     };
   }

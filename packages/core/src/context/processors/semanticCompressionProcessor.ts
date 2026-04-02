@@ -3,7 +3,7 @@
  * Copyright 2026 Google LLC
  * SPDX-License-Identifier: Apache-2.0
  */
-import type { Content, Part } from '@google/genai';
+import type { Episode, ToolExecution } from '../ir/types.js';
 import type {
   ContextAccountingState,
   ContextProcessor,
@@ -65,36 +65,30 @@ export class SemanticCompressionProcessor implements ContextProcessor {
   }
 
   async process(
-    history: Content[],
+    episodes: Episode[],
     state: ContextAccountingState,
   ): Promise<ContextProcessorResult> {
     if (state.isBudgetSatisfied) {
-      return { history, savedTokens: 0 };
+      return { episodes, savedTokens: 0 };
     }
 
     debugLogger.log(
-      `SemanticCompressionProcessor: Initializing LLM-based file compression.`,
+      'SemanticCompressionProcessor: Initializing LLM-based file compression.',
     );
 
-    // The current ContextCompressionService requires the userPrompt to route properly.
-    // For this generalized pipeline, we try to extract the last user message as the query.
     let userPrompt = 'Please refer to the history.';
-    for (let i = history.length - 1; i >= 0; i--) {
-      if (history[i].role === 'user' && history[i].parts?.[0]?.text) {
-        userPrompt =
-          history[i].parts![0].text || 'Please refer to the history.';
+    for (let i = episodes.length - 1; i >= 0; i--) {
+      if (episodes[i].trigger.type === 'USER_PROMPT') {
+        userPrompt = (episodes[i].trigger as any).text || 'Please refer to the history.';
         break;
       }
     }
 
     await this.loadState();
-    const compressedHistory = await this.compressHistory(history, userPrompt);
+    const compressedEpisodes = await this.compressHistory(episodes, userPrompt);
 
-    // We don't have an exact saved token count from the service right now without an extra call.
-    // Since it's the last in the standard pipeline, we can just return 0 to force a full recount
-    // at the end of the ContextManager run.
     return {
-      history: compressedHistory,
+      episodes: compressedEpisodes,
       savedTokens: 0,
     };
   }
@@ -110,7 +104,7 @@ export class SemanticCompressionProcessor implements ContextProcessor {
         }
       }
     } catch (e) {
-      debugLogger.warn(`Failed to load compression state: ${e}`);
+      debugLogger.warn('Failed to load compression state: ' + e);
     }
   }
 
@@ -126,144 +120,86 @@ export class SemanticCompressionProcessor implements ContextProcessor {
         'utf-8',
       );
     } catch (e) {
-      debugLogger.warn(`Failed to save compression state: ${e}`);
+      debugLogger.warn('Failed to save compression state: ' + e);
     }
   }
 
   private async compressHistory(
-    history: Content[],
+    episodes: Episode[],
     userPrompt: string,
     abortSignal?: AbortSignal,
-  ): Promise<Content[]> {
-    const RECENT_TURNS_PROTECTED = 2;
-    const cutoff = Math.max(0, history.length - RECENT_TURNS_PROTECTED * 2);
+  ): Promise<Episode[]> {
+    const RECENT_TURNS_PROTECTED = 1;
+    const cutoff = Math.max(0, episodes.length - RECENT_TURNS_PROTECTED);
 
     // Pass 1: Find protected files
     const protectedFiles = new Set<string>();
-    for (let i = 0; i < history.length; i++) {
-      const turn = history[i];
-      if (!turn.parts) continue;
-
-      for (const part of turn.parts) {
-        if (
-          part.functionCall &&
-          (part.functionCall.name === 'read_file' ||
-            part.functionCall.name === 'read_many_files')
-        ) {
-          const args = part.functionCall.args;
-          if (args) {
-            if (Array.isArray(args['paths'])) {
-              if (i >= cutoff) {
-                for (const p of args['paths']) {
-                  protectedFiles.add(p);
-                }
-              }
-            }
-            const filepath = args['filepath'];
-            if (filepath && typeof filepath === 'string') {
-              if (i >= cutoff) {
-                protectedFiles.add(filepath);
-              }
-            }
+    for (let i = 0; i < episodes.length; i++) {
+      const ep = episodes[i];
+      for (const step of ep.steps) {
+        if (step.type === 'TOOL_EXECUTION' && (step.toolName === 'read_file' || step.toolName === 'read_many_files')) {
+          if (i >= cutoff) {
+             const intent = step.intent;
+             if (intent['filepath'] && typeof intent['filepath'] === 'string') protectedFiles.add(intent['filepath']);
+             if (Array.isArray(intent['paths'])) intent['paths'].forEach((p: string) => protectedFiles.add(p));
           }
         }
       }
     }
 
     // Pass 2: Collect files needing routing decisions
-    type PendingFile = {
-      filepath: string;
-      rawContent: string;
-      contentToProcess: string;
-      lines: string[];
-      preview: string;
-      lineCount: number;
-    };
+    type PendingFile = { filepath: string; rawContent: string; contentToProcess: string; lines: string[]; preview: string; lineCount: number; };
     const pendingFiles: PendingFile[] = [];
-    const pendingFilesSet = new Set<string>(); // deduplicate by filepath
+    const pendingFilesSet = new Set<string>();
 
-    for (let i = 0; i < history.length; i++) {
-      const turn = history[i];
-      if (i >= cutoff || turn.role !== 'user' || !turn.parts) continue;
+    for (let i = 0; i < cutoff; i++) {
+      const ep = episodes[i];
+      for (const step of ep.steps) {
+        if (step.type !== 'TOOL_EXECUTION') continue;
+        if (step.toolName !== 'read_file' && step.toolName !== 'read_many_files') continue;
 
-      for (const part of turn.parts) {
-        const resp = part.functionResponse;
-        if (!resp) continue;
-        if (resp.name !== 'read_file' && resp.name !== 'read_many_files')
-          continue;
-
-        const output = resp.response?.['output'];
+        const output = typeof step.observation === 'object' && step.observation ? step.observation['output'] : null;
         if (!output || typeof output !== 'string') continue;
 
         const match = output.match(/--- (.+?) ---\n/);
         let filepath = '';
-        if (match) {
-          filepath = match[1];
-        } else {
+        if (match) filepath = match[1];
+        else {
           const lines = output.split('\n');
-          if (lines[0] && lines[0].includes('---')) {
-            filepath = lines[0].replace(/---/g, '').trim();
-          }
+          if (lines[0] && lines[0].includes('---')) filepath = lines[0].replace(/---/g, '').trim();
         }
 
         if (!filepath || protectedFiles.has(filepath)) continue;
 
         const hash = hashStringSlice(output);
         const existing = this.state.get(filepath);
-        if (
-          existing?.level === 'SUMMARY' &&
-          existing.cachedSummary &&
-          existing.contentHash === hash
-        ) {
-          continue; // Cache hit — skip routing for this file
-        }
+        if (existing?.level === 'SUMMARY' && existing.cachedSummary && existing.contentHash === hash) continue;
 
-        if (pendingFilesSet.has(filepath)) continue; // already queued
+        if (pendingFilesSet.has(filepath)) continue;
         pendingFilesSet.add(filepath);
 
         let contentToProcess = output;
         if (contentToProcess.startsWith('--- ')) {
           const firstNewline = contentToProcess.indexOf('\n');
-          if (firstNewline !== -1) {
-            contentToProcess = contentToProcess.substring(firstNewline + 1);
-          }
+          if (firstNewline !== -1) contentToProcess = contentToProcess.substring(firstNewline + 1);
         }
         const lines = contentToProcess.split('\n');
 
-        pendingFiles.push({
-          filepath,
-          rawContent: output,
-          contentToProcess,
-          lines,
-          preview: lines.slice(0, 30).join('\n'),
-          lineCount: lines.length,
-        });
+        pendingFiles.push({ filepath, rawContent: output, contentToProcess, lines, preview: lines.slice(0, 30).join('\n'), lineCount: lines.length });
       }
     }
 
-    // Pass 3: Single batched routing call for all pending files
     const routingDecisions = await this.batchQueryModel(
-      pendingFiles.map((f) => ({
-        filepath: f.filepath,
-        lineCount: f.lineCount,
-        preview: f.preview,
-      })),
+      pendingFiles.map((f) => ({ filepath: f.filepath, lineCount: f.lineCount, preview: f.preview })),
       userPrompt,
       abortSignal,
     );
 
-    // Update state and save once for all files
     for (const f of pendingFiles) {
-      const decision = routingDecisions.get(f.filepath) ?? {
-        level: 'FULL' as FileLevel,
-      };
-      const record = this.state.get(f.filepath) ?? {
-        level: 'FULL' as FileLevel,
-      };
+      const decision = routingDecisions.get(f.filepath) ?? { level: 'FULL' as FileLevel };
+      const record = this.state.get(f.filepath) ?? { level: 'FULL' as FileLevel };
       const hash = hashStringSlice(f.rawContent);
-      if (record.contentHash && record.contentHash !== hash) {
-        record.cachedSummary = undefined;
-      }
+      if (record.contentHash && record.contentHash !== hash) record.cachedSummary = undefined;
       record.contentHash = hash;
       record.level = decision.level;
       record.startLine = decision.startLine;
@@ -273,111 +209,87 @@ export class SemanticCompressionProcessor implements ContextProcessor {
     await this.saveState();
 
     // Pass 4: Apply decisions
-    const result: Content[] = [];
-    for (let i = 0; i < history.length; i++) {
-      const turn = history[i];
-      if (i >= cutoff || turn.role !== 'user' || !turn.parts) {
-        result.push(turn);
+    const result: Episode[] = [];
+    for (let i = 0; i < episodes.length; i++) {
+      const ep = { ...episodes[i], steps: [...episodes[i].steps] };
+      if (i >= cutoff) {
+        result.push(ep);
         continue;
       }
 
-      const newParts = await Promise.all(
-        turn.parts.map((part: Part) =>
-          this.applyCompressionDecision(
-            part,
-            protectedFiles,
-            abortSignal,
-          ),
-        ),
-      );
-      result.push({ ...turn, parts: newParts });
+      for (let j = 0; j < ep.steps.length; j++) {
+        const step = ep.steps[j];
+        if (step.type === 'TOOL_EXECUTION') {
+           ep.steps[j] = await this.applyCompressionDecision(step, protectedFiles, abortSignal);
+        }
+      }
+      result.push(ep);
     }
 
     return result;
   }
 
   private async applyCompressionDecision(
-    part: Part,
+    step: ToolExecution,
     protectedFiles: Set<string>,
     abortSignal?: AbortSignal,
-  ): Promise<Part> {
-    const resp = part.functionResponse;
-    if (!resp) return part;
-    if (resp.name !== 'read_file' && resp.name !== 'read_many_files')
-      return part;
+  ): Promise<ToolExecution> {
+    if (step.toolName !== 'read_file' && step.toolName !== 'read_many_files') return step;
 
-    const output = resp.response?.['output'];
-    if (!output || typeof output !== 'string') return part;
+    const output = typeof step.observation === 'object' && step.observation ? step.observation['output'] : null;
+    if (!output || typeof output !== 'string') return step;
 
     const match = output.match(/--- (.+?) ---\n/);
     let filepath = '';
-    if (match) {
-      filepath = match[1];
-    } else {
+    if (match) filepath = match[1];
+    else {
       const lines = output.split('\n');
-      if (lines[0] && lines[0].includes('---')) {
-        filepath = lines[0].replace(/---/g, '').trim();
-      } else {
-        return part;
-      }
+      if (lines[0] && lines[0].includes('---')) filepath = lines[0].replace(/---/g, '').trim();
+      else return step;
     }
 
-    if (protectedFiles.has(filepath)) return part;
+    if (protectedFiles.has(filepath)) return step;
 
     const record = this.state.get(filepath);
-    if (!record || record.level === 'FULL') return part;
+    if (!record || record.level === 'FULL') return step;
 
     let contentToProcess = output;
     if (contentToProcess.startsWith('--- ')) {
       const firstNewline = contentToProcess.indexOf('\n');
-      if (firstNewline !== -1) {
-        contentToProcess = contentToProcess.substring(firstNewline + 1);
-      }
+      if (firstNewline !== -1) contentToProcess = contentToProcess.substring(firstNewline + 1);
     }
     const lines = contentToProcess.split('\n');
-
     let compressed: string;
 
     if (record.level === 'PARTIAL' && record.startLine && record.endLine) {
       const start = Math.max(0, record.startLine - 1);
       const end = Math.min(lines.length, record.endLine);
-      const snippet = lines
-        .slice(start, end)
-        .map((l, i) => `${start + i + 1} | ${l}`)
-        .join('\n');
-      compressed =
-        `[Showing lines ${record.startLine}–${record.endLine} of ${lines.length} ` +
-        `in ${path.basename(filepath)}. Full file available via read_file.]\n\n${snippet}`;
+      const snippet = lines.slice(start, end).map((l, i) => `${start + i + 1} | ${l}`).join('\n');
+      compressed = `[Showing lines ${record.startLine}–${record.endLine} of ${lines.length} in ${path.basename(filepath)}. Full file available via read_file.]\n\n${snippet}`;
     } else if (record.level === 'SUMMARY') {
       if (!record.cachedSummary) {
-        record.cachedSummary = await this.generateSummary(
-          filepath,
-          contentToProcess,
-          abortSignal,
-        );
+        record.cachedSummary = await this.generateSummary(filepath, contentToProcess, abortSignal);
         this.state.set(filepath, record);
         await this.saveState();
       }
-      compressed =
-        `[Summary of ${path.basename(filepath)} (${lines.length} lines). ` +
-        `Full file available via read_file.]\n\n${record.cachedSummary}`;
+      compressed = `[Summary of ${path.basename(filepath)} (${lines.length} lines). Full file available via read_file.]\n\n${record.cachedSummary}`;
     } else if (record.level === 'EXCLUDED') {
-      compressed =
-        `[${path.basename(filepath)} omitted as not relevant to current query. ` +
-        `Request via read_file if needed.]`;
+      compressed = `[${path.basename(filepath)} omitted as not relevant to current query. Request via read_file if needed.]`;
     } else {
-      return part;
+      return step;
     }
 
-    if (compressed === output) return part;
+    if (compressed === output) return step;
 
-    return {
-      functionResponse: {
-        // eslint-disable-next-line @typescript-eslint/no-misused-spread
-        ...resp,
-        response: { ...resp.response, output: compressed },
-      },
-    };
+    const newStep = { ...step, observation: { ...(step.observation as any), output: compressed } };
+    delete newStep._rawResponsePart;
+    newStep.metadata.transformations.push({
+      processorName: 'SemanticCompression',
+      action: 'SUMMARIZED',
+      timestamp: Date.now()
+    });
+    
+    return newStep as ToolExecution;
   }
 
   private async batchQueryModel(
@@ -393,16 +305,16 @@ export class SemanticCompressionProcessor implements ContextProcessor {
 
     if (files.length === 0) return results;
 
-    const systemPrompt = `You are a context routing agent for a coding AI session.
-For each file listed, decide what level of content to send to the main model.
-Levels: FULL, PARTIAL (with line range), SUMMARY, EXCLUDED.
-Rules:
-- FULL if the file is directly relevant to the query or small (<80 lines)
-- PARTIAL if only a specific section is needed — provide start_line and end_line
-- SUMMARY for background context files not directly needed
-- EXCLUDED for completely unrelated files
-Respond ONLY with a JSON object where each key is the filepath and the value is:
-{"level":"FULL"|"PARTIAL"|"SUMMARY"|"EXCLUDED","start_line":null,"end_line":null}`;
+    const systemPrompt = 'You are a context routing agent for a coding AI session.\n' +
+'For each file listed, decide what level of content to send to the main model.\n' +
+'Levels: FULL, PARTIAL (with line range), SUMMARY, EXCLUDED.\n' +
+'Rules:\n' +
+'- FULL if the file is directly relevant to the query or small (<80 lines)\n' +
+'- PARTIAL if only a specific section is needed — provide start_line and end_line\n' +
+'- SUMMARY for background context files not directly needed\n' +
+'- EXCLUDED for completely unrelated files\n' +
+'Respond ONLY with a JSON object where each key is the filepath and the value is:\n' +
+'{"level":"FULL"|"PARTIAL"|"SUMMARY"|"EXCLUDED","start_line":null,"end_line":null}';
 
     const fileList = files
       .map(
@@ -454,7 +366,7 @@ Respond ONLY with a JSON object where each key is the filepath and the value is:
       }
     } catch (e) {
       debugLogger.warn(
-        `Batch cloud routing failed: ${e}. Defaulting all to FULL.`,
+        'Batch cloud routing failed: ' + e + '. Defaulting all to FULL.',
       );
     }
     return results;
