@@ -12,7 +12,6 @@
  * and mutable TranslationState, returning zero or more AgentEvents.
  */
 
-import type { FinishReason } from '@google/genai';
 import { GeminiEventType } from '../core/turn.js';
 import type {
   ServerGeminiStreamEvent,
@@ -21,7 +20,6 @@ import type {
 } from '../core/turn.js';
 import type {
   AgentEvent,
-  StreamEndReason,
   ErrorData,
   Usage,
   AgentEventType,
@@ -314,39 +312,6 @@ function handleError(
 // ---------------------------------------------------------------------------
 // Public Mapping Functions
 // ---------------------------------------------------------------------------
-
-/**
- * Maps a Gemini FinishReason to an AgentEnd reason.
- */
-export function mapFinishReason(
-  reason: FinishReason | undefined,
-): StreamEndReason {
-  if (!reason) return 'completed';
-
-  switch (reason) {
-    case 'STOP':
-    case 'FINISH_REASON_UNSPECIFIED':
-      return 'completed';
-    case 'MAX_TOKENS':
-      return 'max_budget';
-    case 'SAFETY':
-    case 'RECITATION':
-    case 'LANGUAGE':
-    case 'BLOCKLIST':
-    case 'PROHIBITED_CONTENT':
-    case 'SPII':
-    case 'IMAGE_SAFETY':
-    case 'IMAGE_PROHIBITED_CONTENT':
-      return 'refusal';
-    case 'MALFORMED_FUNCTION_CALL':
-    case 'OTHER':
-    case 'UNEXPECTED_TOOL_CALL':
-    case 'NO_IMAGE':
-      return 'failed';
-    default:
-      return 'failed';
-  }
-}
 
 /**
  * Maps an HTTP status code to a gRPC-style status string.

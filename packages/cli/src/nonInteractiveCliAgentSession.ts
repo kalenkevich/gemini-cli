@@ -32,9 +32,10 @@ import {
   coreEvents,
   CoreEvent,
   createWorkingStdio,
-  Scheduler,
-  ROOT_SCHEDULER_ID,
-  LegacyAgentSession,
+  // Scheduler,
+  // ROOT_SCHEDULER_ID,
+  // LegacyAgentSession,
+  AdkAgentSession,
   ToolErrorType,
   geminiPartsToContentParts,
 } from '@google/gemini-cli-core';
@@ -214,12 +215,12 @@ export async function runNonInteractive({
       });
 
       const geminiClient = config.getGeminiClient();
-      const scheduler = new Scheduler({
-        context: config,
-        messageBus: config.getMessageBus(),
-        getPreferredEditor: () => undefined,
-        schedulerId: ROOT_SCHEDULER_ID,
-      });
+      // const scheduler = new Scheduler({
+      //   context: config,
+      //   messageBus: config.getMessageBus(),
+      //   getPreferredEditor: () => undefined,
+      //   schedulerId: ROOT_SCHEDULER_ID,
+      // });
 
       // Initialize chat.  Resume if resume data is passed.
       if (resumedSessionData) {
@@ -286,11 +287,15 @@ export async function runNonInteractive({
       }
 
       // Create LegacyAgentSession — owns the agentic loop
-      const session = new LegacyAgentSession({
-        client: geminiClient,
-        scheduler,
+      // const session = new LegacyAgentSession({
+      //   client: geminiClient,
+      //   scheduler,
+      //   config,
+      //   promptId: prompt_id,
+      // });
+      const session = new AdkAgentSession({
         config,
-        promptId: prompt_id,
+        userId: 'gemini-cli-user',
       });
 
       // Wire Ctrl+C to session abort

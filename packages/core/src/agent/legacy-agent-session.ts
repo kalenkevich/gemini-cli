@@ -24,11 +24,11 @@ import {
   contentPartsToGeminiParts,
   geminiPartsToContentParts,
   toolResultDisplayToContentParts,
+  mapFinishReason,
 } from './content-utils.js';
 import { AgentSession } from './agent-session.js';
 import {
   createTranslationState,
-  mapFinishReason,
   translateEvent,
   type TranslationState,
 } from './event-translator.js';

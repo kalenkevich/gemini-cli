@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { Part } from '@google/genai';
-import type { ContentPart } from './types.js';
+import type { Part, FinishReason } from '@google/genai';
+import type { ContentPart, StreamEndReason } from './types.js';
 
 /**
  * Converts Gemini API Part objects to framework-agnostic ContentPart objects.
@@ -136,4 +136,37 @@ export function buildToolResponseData(response: {
   if (response.contentLength !== undefined)
     parts['contentLength'] = response.contentLength;
   return Object.keys(parts).length > 0 ? parts : undefined;
+}
+
+/**
+ * Maps a Gemini FinishReason to an AgentEnd reason.
+ */
+export function mapFinishReason(
+  reason: FinishReason | undefined,
+): StreamEndReason {
+  if (!reason) return 'completed';
+
+  switch (reason) {
+    case 'STOP':
+    case 'FINISH_REASON_UNSPECIFIED':
+      return 'completed';
+    case 'MAX_TOKENS':
+      return 'max_budget';
+    case 'SAFETY':
+    case 'RECITATION':
+    case 'LANGUAGE':
+    case 'BLOCKLIST':
+    case 'PROHIBITED_CONTENT':
+    case 'SPII':
+    case 'IMAGE_SAFETY':
+    case 'IMAGE_PROHIBITED_CONTENT':
+      return 'refusal';
+    case 'MALFORMED_FUNCTION_CALL':
+    case 'OTHER':
+    case 'UNEXPECTED_TOOL_CALL':
+    case 'NO_IMAGE':
+      return 'failed';
+    default:
+      return 'failed';
+  }
 }
