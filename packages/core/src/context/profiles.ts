@@ -5,23 +5,16 @@
  */
 import type { ContextManagementConfig } from './types.js';
 
-export const generalistProfile: ContextManagementConfig = {
+export const PERFORMANCE_CONTEXT_PROFILE: ContextManagementConfig = {
   enabled: true,
-  historyWindow: { maxTokens: 150_000, retainedTokens: 80_000 },
-  messageLimits: {
-    normalMaxTokens: 3_000,
-    retainedMaxTokens: 30_000,
-    normalizationHeadRatio: 0.15,
+  budget: {
+    maxTokens: 150_000,
+    retainedTokens: 80_000,
+    protectedEpisodes: 1,
+    protectSystemEpisode: true,
   },
-  tools: {
-    distillation: {
-      maxOutputTokens: 10_000,
-      summarizationThresholdTokens: 20_000,
-    },
-    outputMasking: {
-      protectionThresholdTokens: 50_000,
-      minPrunableThresholdTokens: 30_000,
-      protectLatestTurn: true,
-    },
+  strategies: {
+    historySquashing: { maxTokensPerPrompt: 12000 },
+    toolMasking: { minObservationTokens: 10000 },
   },
 };

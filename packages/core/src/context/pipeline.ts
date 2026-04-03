@@ -8,16 +8,16 @@ export interface ContextAccountingState {
   readonly currentTokens: number;
   readonly maxTokens: number;
   readonly retainedTokens: number;
-  
+
   /** The exact number of tokens that need to be trimmed to reach the retainedTokens goal */
   readonly deficitTokens: number;
-  
+
   /**
    * Set of Episode IDs that the orchestrator has deemed highly protected.
    * Processors should generally skip mutating these episodes unless doing proactive/required transforms.
    */
   readonly protectedEpisodeIds: Set<string>;
-  
+
   /**
    * True if currentTokens <= retainedTokens.
    */
@@ -30,13 +30,13 @@ export interface ContextAccountingState {
 export interface ContextProcessor {
   /** Unique name for telemetry and logging. */
   readonly name: string;
-  
+
   /**
    * Processes the episodic history payload based on the current accounting state.
    * Processors should return a new or mutated array of episodes.
    */
   process(
-    episodes: Episode[], 
-    state: ContextAccountingState
+    episodes: Episode[],
+    state: ContextAccountingState,
   ): Promise<Episode[]>;
 }

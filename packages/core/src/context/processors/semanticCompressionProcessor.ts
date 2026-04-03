@@ -83,7 +83,11 @@ export class SemanticCompressionProcessor implements ContextProcessor {
     }
 
     await this.loadState();
-    const compressedEpisodes = await this.compressHistory(episodes, userPrompt, state);
+    const compressedEpisodes = await this.compressHistory(
+      episodes,
+      userPrompt,
+      state,
+    );
 
     return compressedEpisodes;
   }
@@ -125,12 +129,9 @@ export class SemanticCompressionProcessor implements ContextProcessor {
     state: ContextAccountingState,
     abortSignal?: AbortSignal,
   ): Promise<Episode[]> {
-    
-    
-
     // Pass 1: Find protected files
     const protectedFiles = new Set<string>();
-        for (let i = 0; i < episodes.length; i++) {
+    for (let i = 0; i < episodes.length; i++) {
       const ep = episodes[i]!;
       if (state.protectedEpisodeIds.has(ep.id)) continue;
       for (const step of ep.steps) {

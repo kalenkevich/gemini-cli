@@ -63,12 +63,8 @@ describe('ToolOutputMaskingService', () => {
   });
 
   it('should respect remote configuration overrides', async () => {
-    mockConfig.getToolOutputMaskingConfig = async () => ({
-      enabled: true,
-      protectionThresholdTokens: 100, // Very low threshold
-      minPrunableThresholdTokens: 50,
-      protectLatestTurn: false,
-    });
+    mockConfig.getContextManagementConfig = () =>
+      ({ strategies: { toolMasking: { minObservationTokens: 100 } } }) as any;
 
     const history: Content[] = [
       {

@@ -29,8 +29,8 @@ export class ContextManager {
     }
 
     const mngConfig = this.config.getContextManagementConfig();
-    const maxTokens = mngConfig.historyWindow.maxTokens;
-    const retainedTokens = mngConfig.historyWindow.retainedTokens;
+    const maxTokens = mngConfig.budget.maxTokens;
+    const retainedTokens = mngConfig.budget.retainedTokens;
 
     let currentEpisodes = IrMapper.toIr(history);
     let currentTokens = this.calculateIrTokens(currentEpisodes);
@@ -43,9 +43,9 @@ export class ContextManager {
       `Context Manager triggered: Context window at ${currentTokens} tokens (limit: ${maxTokens}, target: ${retainedTokens}).`,
     );
 
-        const protectedEpisodeIds = new Set<string>();
+    const protectedEpisodeIds = new Set<string>();
     // Protect the very first episode (often contains the initial architectural ask/system prompt)
-    if (currentEpisodes.length > 0) {
+    if (mngConfig.budget.protectSystemEpisode && currentEpisodes.length > 0) {
       protectedEpisodeIds.add(currentEpisodes[0]!.id);
     }
     // Protect the most recent episode (current working context)

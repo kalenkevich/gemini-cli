@@ -18,8 +18,6 @@ export function getDummyState(): ContextAccountingState {
   };
 }
 
-
-
 import type { Config } from '../../config/config.js';
 import type { Content } from '@google/genai';
 import * as fsSync from 'node:fs';
@@ -59,13 +57,14 @@ describe('SemanticCompressionProcessor', () => {
     vi.clearAllMocks();
   });
 
-  
-
   describe('process', () => {
     it('bypasses compression if budget is satisfied', async () => {
       const history: Content[] = [{ role: 'user', parts: [{ text: 'hello' }] }];
-      
-      const res = await processor.process(IrMapper.toIr(history), getDummyState());
+
+      const res = await processor.process(
+        IrMapper.toIr(history),
+        getDummyState(),
+      );
       expect(IrMapper.fromIr(res)).toStrictEqual(history);
     });
 
@@ -138,8 +137,8 @@ describe('SemanticCompressionProcessor', () => {
       );
 
       // Because src/app.ts was re-read recently, the OLD response is PROTECTED.
-      const compressedOutput = IrMapper.fromIr(res)[1].parts![0]
-        .functionResponse!.response!['output'];
+      const compressedOutput =
+        IrMapper.fromIr(res)[1].parts![0].functionResponse!.response!['output'];
       expect(compressedOutput).toBe(
         '--- src/app.ts ---\nLine 1\nLine 2\nLine 3',
       );
@@ -192,8 +191,8 @@ describe('SemanticCompressionProcessor', () => {
         IrMapper.toIr(history),
         getDummyState(),
       );
-      const compressedOutput = IrMapper.fromIr(res)[1].parts![0]
-        .functionResponse!.response!['output'];
+      const compressedOutput =
+        IrMapper.fromIr(res)[1].parts![0].functionResponse!.response!['output'];
 
       expect(compressedOutput).toContain('[Showing lines 2–3 of 4 in old.ts.');
       expect(compressedOutput).toContain('2 | Line 2');

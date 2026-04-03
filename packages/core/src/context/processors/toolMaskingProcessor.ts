@@ -40,7 +40,7 @@ export class ToolMaskingProcessor implements ContextProcessor {
     state: ContextAccountingState,
   ): Promise<Episode[]> {
     const maskingConfig =
-      this.config.getContextManagementConfig().tools.outputMasking;
+      this.config.getContextManagementConfig().strategies.toolMasking;
     if (!maskingConfig) return episodes;
     if (state.isBudgetSatisfied) return episodes;
 
@@ -57,7 +57,6 @@ export class ToolMaskingProcessor implements ContextProcessor {
       originalStep: any;
     }> = [];
 
-    
     for (let i = newEpisodes.length - 1; i >= 0; i--) {
       const ep = newEpisodes[i];
       if (!ep || !ep.steps || state.protectedEpisodeIds.has(ep.id)) continue;
@@ -88,7 +87,7 @@ export class ToolMaskingProcessor implements ContextProcessor {
 
         if (!protectionBoundaryReached) {
           cumulativeToolTokens += partTokens;
-          if (cumulativeToolTokens > maskingConfig.protectionThresholdTokens) {
+          if (cumulativeToolTokens > maskingConfig.minObservationTokens) {
             protectionBoundaryReached = true;
             totalPrunableTokens += partTokens;
             prunableParts.push({
@@ -112,7 +111,7 @@ export class ToolMaskingProcessor implements ContextProcessor {
       }
     }
 
-    if (totalPrunableTokens < maskingConfig.minPrunableThresholdTokens) {
+    if (totalPrunableTokens < 1) {
       return newEpisodes;
     }
 

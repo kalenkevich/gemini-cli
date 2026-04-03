@@ -4,28 +4,30 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export interface ToolOutputMaskingConfig {
-  protectionThresholdTokens: number;
-  minPrunableThresholdTokens: number;
-  protectLatestTurn: boolean;
-}
-
 export interface ContextManagementConfig {
   enabled: boolean;
-  historyWindow: {
+
+  /** The global orchestration budget */
+  budget: {
+    /** The absolute maximum tokens before the context manager triggers */
     maxTokens: number;
+    /** The target token count to reduce to when triggered */
     retainedTokens: number;
+    /** The number of recent Episodes to always protect from degradation (default: 1) */
+    protectedEpisodes: number;
+    /** Should we protect Episode 0 (the System Prompt/Architectural Initialization)? */
+    protectSystemEpisode: boolean;
   };
-  messageLimits: {
-    normalMaxTokens: number;
-    retainedMaxTokens: number;
-    normalizationHeadRatio: number;
-  };
-  tools: {
-    distillation: {
-      maxOutputTokens: number;
-      summarizationThresholdTokens: number;
+
+  /** Specific hyperparameters for degrading the context when over budget */
+  strategies: {
+    historySquashing: {
+      /** The maximum allowable tokens for an old user prompt before it gets proportionally truncated */
+      maxTokensPerPrompt: number;
     };
-    outputMasking: ToolOutputMaskingConfig;
+    toolMasking: {
+      /** Only mask tool observations that are larger than this threshold */
+      minObservationTokens: number;
+    };
   };
 }
