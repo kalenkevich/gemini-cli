@@ -34,8 +34,6 @@ export interface ContextAccountingState {
 export interface ContextProcessorResult {
   /** The potentially mutated or newly copied episode array. */
   episodes: Episode[];
-  /** The estimated number of tokens saved during processing. */
-  savedTokens: number;
 }
 
 /**

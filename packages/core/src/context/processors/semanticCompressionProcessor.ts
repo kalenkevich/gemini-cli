@@ -69,7 +69,7 @@ export class SemanticCompressionProcessor implements ContextProcessor {
     state: ContextAccountingState,
   ): Promise<ContextProcessorResult> {
     if (state.isBudgetSatisfied) {
-      return { episodes, savedTokens: 0 };
+      return { episodes };
     }
 
     debugLogger.log(
@@ -87,10 +87,7 @@ export class SemanticCompressionProcessor implements ContextProcessor {
     await this.loadState();
     const compressedEpisodes = await this.compressHistory(episodes, userPrompt);
 
-    return {
-      episodes: compressedEpisodes,
-      savedTokens: 0,
-    };
+    return { episodes: compressedEpisodes };
   }
 
   private async loadState() {

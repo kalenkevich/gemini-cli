@@ -25,7 +25,7 @@ export class HistorySquashingProcessor implements ContextProcessor {
     state: ContextAccountingState,
   ): Promise<ContextProcessorResult> {
         if (state.isBudgetSatisfied) {
-      return { episodes, savedTokens: 0 };
+      return { episodes };
     }
 
     const { normalMaxTokens, retainedMaxTokens, normalizationHeadRatio } =
@@ -35,7 +35,7 @@ export class HistorySquashingProcessor implements ContextProcessor {
     const ratio = normalizationHeadRatio || 0.15;
     void ratio; // satisfy linter
 
-    let savedTokensEstimate = 0;
+    
     const newEpisodes = [...episodes];
 
     for (let i = 0; i <= state.backBufferEndIndex; i++) {
@@ -52,7 +52,6 @@ export class HistorySquashingProcessor implements ContextProcessor {
             if (ep.trigger.parts) {
                ep.trigger.parts = [{ text: truncated }]; // override parts for mapping
             }
-            savedTokensEstimate += Math.floor((originalLength - truncated.length) / 4);
             ep.trigger.metadata.transformations.push({
               processorName: 'HistorySquashing',
               action: 'TRUNCATED',
@@ -63,9 +62,6 @@ export class HistorySquashingProcessor implements ContextProcessor {
       }
     }
 
-    return {
-      episodes: newEpisodes,
-      savedTokens: savedTokensEstimate,
-    };
+    return { episodes: newEpisodes };
   }
 }

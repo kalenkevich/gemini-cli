@@ -13,24 +13,16 @@ import type { Episode } from './ir/types.js';
 
 export class ContextManager {
   private config: Config;
-
   private processors: ContextProcessor[] = [];
 
   constructor(config: Config, _client: GeminiClient) {
     this.config = config;
   }
 
-  /**
-   * Inject the ordered pipeline of processors.
-   * Typical order: [Masking (fast), Squashing (fast), Semantic Compression (slow)]
-   */
   setProcessors(processors: ContextProcessor[]) {
     this.processors = processors;
   }
 
-  /**
-   * Orchestrates the history degradation through the registered pipeline.
-   */
   async processHistory(history: Content[]): Promise<Content[]> {
     if (!this.config.isContextManagementEnabled()) {
       return history;
@@ -41,28 +33,21 @@ export class ContextManager {
     const retainedTokens = mngConfig.historyWindow.retainedTokens;
 
     let currentEpisodes = IrMapper.toIr(history);
-    let currentTokens = this.estimateTokens(currentEpisodes);
+    let currentTokens = this.calculateIrTokens(currentEpisodes);
     
     if (currentTokens <= maxTokens) {
-      return history; // Well under the high-water mark, do nothing.
+      return history;
     }
 
     debugLogger.log(
       `Context Manager triggered: Context window at ${currentTokens} tokens (limit: ${maxTokens}, target: ${retainedTokens}).`,
     );
 
-    for (const processor of this.processors) {
-      // Calculate buffer zones dynamically in terms of Episodes
-      const protectedEpisodes = mngConfig.tools?.outputMasking?.protectLatestTurn
-        ? 1
-        : 0;
-      const frontBufferStartIndex = Math.max(
-        0,
-        currentEpisodes.length - protectedEpisodes,
-      );
-      // Back buffer is everything else.
-      const backBufferEndIndex = Math.max(0, frontBufferStartIndex - 1);
+    const protectedEpisodes = 1;
+    const frontBufferStartIndex = Math.max(0, currentEpisodes.length - protectedEpisodes);
+    const backBufferEndIndex = Math.max(0, frontBufferStartIndex - 1);
 
+    for (const processor of this.processors) {
       const state: ContextAccountingState = {
         currentTokens,
         maxTokens,
@@ -73,7 +58,7 @@ export class ContextManager {
       };
 
       if (state.isBudgetSatisfied) {
-        debugLogger.log(`Context Manager satisfied budget. Stopping early.`);
+        debugLogger.log('Context Manager satisfied budget. Stopping early.');
         break;
       }
 
@@ -81,17 +66,17 @@ export class ContextManager {
       const result = await processor.process(currentEpisodes, state);
 
       currentEpisodes = result.episodes;
-
-      if (result.savedTokens > 0) {
-        currentTokens = Math.max(0, currentTokens - result.savedTokens);
+      const newTokens = this.calculateIrTokens(currentEpisodes);
+      
+      if (newTokens < currentTokens) {
         debugLogger.log(
-          `Processor [${processor.name}] saved approx ${result.savedTokens} tokens. New estimate: ${currentTokens}.`,
+          `Processor [${processor.name}] saved approx ${currentTokens - newTokens} tokens. New estimate: ${newTokens}.`,
         );
+        currentTokens = newTokens;
       }
     }
 
-    // Final sanity check
-    const finalTokens = this.estimateTokens(currentEpisodes);
+    const finalTokens = this.calculateIrTokens(currentEpisodes);
     debugLogger.log(
       `Context Manager finished. Final actual token count: ${finalTokens}.`,
     );
@@ -99,21 +84,15 @@ export class ContextManager {
     return IrMapper.fromIr(currentEpisodes);
   }
 
-  private estimateTokens(episodes: Episode[]): number {
-    let chars = 0;
+  private calculateIrTokens(episodes: Episode[]): number {
+    let tokens = 0;
     for (const ep of episodes) {
-      if (ep.trigger.type === 'USER_PROMPT') chars += ep.trigger.text.length;
+      if (ep.trigger) tokens += ep.trigger.metadata.currentTokens;
       for (const step of ep.steps) {
-        if (step.type === 'AGENT_THOUGHT') chars += step.text.length;
-        if (step.type === 'TOOL_EXECUTION') {
-          const obs = step.observation;
-          if (typeof obs === 'object' && obs && typeof obs['output'] === 'string') {
-            chars += obs['output'].length;
-          }
-        }
+        tokens += step.metadata.currentTokens;
       }
-      if (ep.yield) chars += ep.yield.text.length;
+      if (ep.yield) tokens += ep.yield.metadata.currentTokens;
     }
-    return Math.floor(chars / 4);
+    return tokens;
   }
 }

@@ -41,14 +41,14 @@ export class ToolMaskingProcessor implements ContextProcessor {
 
   async process(episodes: Episode[], state: ContextAccountingState): Promise<ContextProcessorResult> {
         const maskingConfig = this.config.getContextManagementConfig().tools.outputMasking;
-    if (!maskingConfig) return { episodes, savedTokens: 0 };
-    if (state.isBudgetSatisfied) return { episodes, savedTokens: 0 };
+    if (!maskingConfig) return { episodes };
+    if (state.isBudgetSatisfied) return { episodes };
 
     const newEpisodes = [...episodes];
     let cumulativeToolTokens = 0;
     let protectionBoundaryReached = false;
     let totalPrunableTokens = 0;
-    let actualTokensSaved = 0;
+    
 
     const prunableParts: Array<{
       epIndex: number;
@@ -91,7 +91,7 @@ export class ToolMaskingProcessor implements ContextProcessor {
     }
 
     if (totalPrunableTokens < maskingConfig.minPrunableThresholdTokens) {
-      return { episodes: newEpisodes, savedTokens: 0 };
+      return { episodes: newEpisodes };
     }
 
     let toolOutputsDir = path.join(this.config.storage.getProjectTempDir(), 'tool-outputs');
@@ -124,7 +124,7 @@ export class ToolMaskingProcessor implements ContextProcessor {
       const savings = tokens - newTaskTokens;
 
       if (savings > 0) {
-        actualTokensSaved += savings;
+        
         step.metadata.currentTokens = newTaskTokens;
         step.metadata.transformations.push({
           processorName: 'ToolMasking',
@@ -135,10 +135,7 @@ export class ToolMaskingProcessor implements ContextProcessor {
       }
     }
 
-    return {
-      episodes: newEpisodes,
-      savedTokens: actualTokensSaved,
-    };
+    return { episodes: newEpisodes };
   }
 
   
