@@ -5,11 +5,7 @@ import type { Episode } from '../ir/types.js';
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type {
-  ContextAccountingState,
-  ContextProcessor,
-  ContextProcessorResult,
-} from '../pipeline.js';
+import type { ContextAccountingState, ContextProcessor } from '../pipeline.js';
 import type { Config } from '../../config/config.js';
 import { estimateTokenCountSync } from '../../utils/tokenCalculation.js';
 import { sanitizeFilenamePart } from '../../utils/fileUtils.js';
@@ -42,11 +38,11 @@ export class ToolMaskingProcessor implements ContextProcessor {
   async process(
     episodes: Episode[],
     state: ContextAccountingState,
-  ): Promise<ContextProcessorResult> {
+  ): Promise<Episode[]> {
     const maskingConfig =
       this.config.getContextManagementConfig().tools.outputMasking;
-    if (!maskingConfig) return { episodes };
-    if (state.isBudgetSatisfied) return { episodes };
+    if (!maskingConfig) return episodes;
+    if (state.isBudgetSatisfied) return episodes;
 
     const newEpisodes = [...episodes];
     let cumulativeToolTokens = 0;
@@ -61,14 +57,10 @@ export class ToolMaskingProcessor implements ContextProcessor {
       originalStep: any;
     }> = [];
 
-    const scanStartIdx = Math.min(
-      state.backBufferEndIndex,
-      newEpisodes.length - 1,
-    );
-
-    for (let i = scanStartIdx; i >= 0; i--) {
+    
+    for (let i = newEpisodes.length - 1; i >= 0; i--) {
       const ep = newEpisodes[i];
-      if (!ep || !ep.steps) continue;
+      if (!ep || !ep.steps || state.protectedEpisodeIds.has(ep.id)) continue;
 
       for (let j = ep.steps.length - 1; j >= 0; j--) {
         const step = ep.steps[j];
@@ -121,7 +113,7 @@ export class ToolMaskingProcessor implements ContextProcessor {
     }
 
     if (totalPrunableTokens < maskingConfig.minPrunableThresholdTokens) {
-      return { episodes: newEpisodes };
+      return newEpisodes;
     }
 
     let toolOutputsDir = path.join(
@@ -183,7 +175,7 @@ export class ToolMaskingProcessor implements ContextProcessor {
       }
     }
 
-    return { episodes: newEpisodes };
+    return newEpisodes;
   }
 
   private isAlreadyMasked(content: string): boolean {

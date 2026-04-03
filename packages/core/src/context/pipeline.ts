@@ -2,38 +2,26 @@ import type { Episode } from './ir/types.js';
 
 /**
  * State object passed through the processing pipeline.
- * Contains global accounting logic and range delimiters to coordinate degradation without tight coupling.
+ * Contains global accounting logic and semantic protection rules.
  */
 export interface ContextAccountingState {
   readonly currentTokens: number;
   readonly maxTokens: number;
   readonly retainedTokens: number;
-
+  
+  /** The exact number of tokens that need to be trimmed to reach the retainedTokens goal */
+  readonly deficitTokens: number;
+  
   /**
-   * Index in the episodes array where the "front buffer" begins.
-   * Everything after this index is considered recent and highly protected.
+   * Set of Episode IDs that the orchestrator has deemed highly protected.
+   * Processors should generally skip mutating these episodes unless doing proactive/required transforms.
    */
-  readonly frontBufferStartIndex: number;
-
-  /**
-   * Index in the episodes array where the "back buffer" ends.
-   * Everything before this index is considered old and ripe for gradual degradation.
-   */
-  readonly backBufferEndIndex: number;
-
+  readonly protectedEpisodeIds: Set<string>;
+  
   /**
    * True if currentTokens <= retainedTokens.
-   * Processors should generally exit early if this is true.
    */
   readonly isBudgetSatisfied: boolean;
-}
-
-/**
- * Result returned by a ContextProcessor after execution.
- */
-export interface ContextProcessorResult {
-  /** The potentially mutated or newly copied episode array. */
-  episodes: Episode[];
 }
 
 /**
@@ -42,12 +30,13 @@ export interface ContextProcessorResult {
 export interface ContextProcessor {
   /** Unique name for telemetry and logging. */
   readonly name: string;
-
+  
   /**
    * Processes the episodic history payload based on the current accounting state.
+   * Processors should return a new or mutated array of episodes.
    */
   process(
-    episodes: Episode[],
-    state: ContextAccountingState,
-  ): Promise<ContextProcessorResult>;
+    episodes: Episode[], 
+    state: ContextAccountingState
+  ): Promise<Episode[]>;
 }

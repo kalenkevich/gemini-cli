@@ -5,11 +5,7 @@ import { estimateTokenCountSync } from '../../utils/tokenCalculation.js';
  * SPDX-License-Identifier: Apache-2.0
  */
 import type { Episode, ToolExecution } from '../ir/types.js';
-import type {
-  ContextAccountingState,
-  ContextProcessor,
-  ContextProcessorResult,
-} from '../pipeline.js';
+import type { ContextAccountingState, ContextProcessor } from '../pipeline.js';
 import type { Config } from '../../config/config.js';
 import { debugLogger } from '../../utils/debugLogger.js';
 import { LlmRole } from '../../telemetry/types.js';
@@ -68,9 +64,9 @@ export class SemanticCompressionProcessor implements ContextProcessor {
   async process(
     episodes: Episode[],
     state: ContextAccountingState,
-  ): Promise<ContextProcessorResult> {
+  ): Promise<Episode[]> {
     if (state.isBudgetSatisfied) {
-      return { episodes };
+      return episodes;
     }
 
     debugLogger.log(
@@ -87,9 +83,9 @@ export class SemanticCompressionProcessor implements ContextProcessor {
     }
 
     await this.loadState();
-    const compressedEpisodes = await this.compressHistory(episodes, userPrompt);
+    const compressedEpisodes = await this.compressHistory(episodes, userPrompt, state);
 
-    return { episodes: compressedEpisodes };
+    return compressedEpisodes;
   }
 
   private async loadState() {
@@ -126,21 +122,23 @@ export class SemanticCompressionProcessor implements ContextProcessor {
   private async compressHistory(
     episodes: Episode[],
     userPrompt: string,
+    state: ContextAccountingState,
     abortSignal?: AbortSignal,
   ): Promise<Episode[]> {
-    const RECENT_TURNS_PROTECTED = 1;
-    const cutoff = Math.max(0, episodes.length - RECENT_TURNS_PROTECTED);
+    
+    
 
     // Pass 1: Find protected files
     const protectedFiles = new Set<string>();
-    for (let i = 0; i < episodes.length; i++) {
-      const ep = episodes[i];
+        for (let i = 0; i < episodes.length; i++) {
+      const ep = episodes[i]!;
+      if (state.protectedEpisodeIds.has(ep.id)) continue;
       for (const step of ep.steps) {
         if (
           step.type === 'TOOL_EXECUTION' &&
           (step.toolName === 'read_file' || step.toolName === 'read_many_files')
         ) {
-          if (i >= cutoff) {
+          if (state.protectedEpisodeIds.has(episodes[i]!.id)) {
             const intent = step.intent;
             if (intent['filepath'] && typeof intent['filepath'] === 'string')
               protectedFiles.add(intent['filepath']);
@@ -163,8 +161,9 @@ export class SemanticCompressionProcessor implements ContextProcessor {
     const pendingFiles: PendingFile[] = [];
     const pendingFilesSet = new Set<string>();
 
-    for (let i = 0; i < cutoff; i++) {
-      const ep = episodes[i];
+    for (let i = 0; i < episodes.length; i++) {
+      const ep = episodes[i]!;
+      if (state.protectedEpisodeIds.has(ep.id)) continue;
       for (const step of ep.steps) {
         if (step.type !== 'TOOL_EXECUTION') continue;
         if (
@@ -253,7 +252,7 @@ export class SemanticCompressionProcessor implements ContextProcessor {
     const result: Episode[] = [];
     for (let i = 0; i < episodes.length; i++) {
       const ep = { ...episodes[i], steps: [...episodes[i].steps] };
-      if (i >= cutoff) {
+      if (state.protectedEpisodeIds.has(ep.id)) {
         result.push(ep);
         continue;
       }

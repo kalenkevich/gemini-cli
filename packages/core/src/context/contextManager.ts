@@ -43,20 +43,23 @@ export class ContextManager {
       `Context Manager triggered: Context window at ${currentTokens} tokens (limit: ${maxTokens}, target: ${retainedTokens}).`,
     );
 
-    const protectedEpisodes = 1;
-    const frontBufferStartIndex = Math.max(
-      0,
-      currentEpisodes.length - protectedEpisodes,
-    );
-    const backBufferEndIndex = Math.max(0, frontBufferStartIndex - 1);
+        const protectedEpisodeIds = new Set<string>();
+    // Protect the very first episode (often contains the initial architectural ask/system prompt)
+    if (currentEpisodes.length > 0) {
+      protectedEpisodeIds.add(currentEpisodes[0]!.id);
+    }
+    // Protect the most recent episode (current working context)
+    if (currentEpisodes.length > 1) {
+      protectedEpisodeIds.add(currentEpisodes[currentEpisodes.length - 1]!.id);
+    }
 
     for (const processor of this.processors) {
       const state: ContextAccountingState = {
         currentTokens,
         maxTokens,
         retainedTokens,
-        frontBufferStartIndex,
-        backBufferEndIndex,
+        deficitTokens: Math.max(0, currentTokens - retainedTokens),
+        protectedEpisodeIds,
         isBudgetSatisfied: currentTokens <= retainedTokens,
       };
 
@@ -66,9 +69,7 @@ export class ContextManager {
       }
 
       debugLogger.log(`Running ContextProcessor: ${processor.name}`);
-      const result = await processor.process(currentEpisodes, state);
-
-      currentEpisodes = result.episodes;
+      currentEpisodes = await processor.process(currentEpisodes, state);
       const newTokens = this.calculateIrTokens(currentEpisodes);
 
       if (newTokens < currentTokens) {
