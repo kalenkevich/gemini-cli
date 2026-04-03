@@ -82,7 +82,7 @@ import {
   buildUserSteeringHintPrompt,
   logBillingEvent,
   ApiKeyUpdatedEvent,
-  LegacyAgentProtocol,
+  AdkAgentProtocol,
   type InjectionSource,
 } from '@google/gemini-cli-core';
 import { validateAuthMethod } from '../config/auth.js';
@@ -1096,9 +1096,9 @@ Logging in with Google... Restarting Gemini CLI to continue.
   const streamAgent = useMemo(
     () =>
       config?.getExperimentalUseAgentProtocol()
-        ? new LegacyAgentProtocol({ config, getPreferredEditor })
+        ? new AdkAgentProtocol({ config, userId: 'gemini-cli-user' })
         : undefined,
-    [config, getPreferredEditor],
+    [config],
   );
 
   const activeStream = streamAgent

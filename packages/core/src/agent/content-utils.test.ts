@@ -10,8 +10,9 @@ import {
   contentPartsToGeminiParts,
   toolResultDisplayToContentParts,
   buildToolResponseData,
+  mapFinishReason,
 } from './content-utils.js';
-import type { Part } from '@google/genai';
+import { type Part, FinishReason } from '@google/genai';
 import type { ContentPart } from './types.js';
 
 describe('geminiPartsToContentParts', () => {
@@ -253,6 +254,68 @@ describe('buildToolResponseData', () => {
     expect(result).toEqual({
       custom: 'value',
       outputFile: '/tmp/file.txt',
+    });
+  });
+
+  describe('mapFinishReason', () => {
+    it('maps STOP to completed', () => {
+      expect(mapFinishReason(FinishReason.STOP)).toBe('completed');
+    });
+  
+    it('maps undefined to completed', () => {
+      expect(mapFinishReason(undefined)).toBe('completed');
+    });
+  
+    it('maps MAX_TOKENS to max_budget', () => {
+      expect(mapFinishReason(FinishReason.MAX_TOKENS)).toBe('max_budget');
+    });
+  
+    it('maps SAFETY to refusal', () => {
+      expect(mapFinishReason(FinishReason.SAFETY)).toBe('refusal');
+    });
+  
+    it('maps MALFORMED_FUNCTION_CALL to failed', () => {
+      expect(mapFinishReason(FinishReason.MALFORMED_FUNCTION_CALL)).toBe(
+        'failed',
+      );
+    });
+  
+    it('maps RECITATION to refusal', () => {
+      expect(mapFinishReason(FinishReason.RECITATION)).toBe('refusal');
+    });
+  
+    it('maps LANGUAGE to refusal', () => {
+      expect(mapFinishReason(FinishReason.LANGUAGE)).toBe('refusal');
+    });
+  
+    it('maps BLOCKLIST to refusal', () => {
+      expect(mapFinishReason(FinishReason.BLOCKLIST)).toBe('refusal');
+    });
+  
+    it('maps OTHER to failed', () => {
+      expect(mapFinishReason(FinishReason.OTHER)).toBe('failed');
+    });
+  
+    it('maps PROHIBITED_CONTENT to refusal', () => {
+      expect(mapFinishReason(FinishReason.PROHIBITED_CONTENT)).toBe('refusal');
+    });
+  
+    it('maps IMAGE_SAFETY to refusal', () => {
+      expect(mapFinishReason(FinishReason.IMAGE_SAFETY)).toBe('refusal');
+    });
+  
+    it('maps IMAGE_PROHIBITED_CONTENT to refusal', () => {
+      expect(mapFinishReason(FinishReason.IMAGE_PROHIBITED_CONTENT)).toBe(
+        'refusal',
+      );
+    });
+  
+    it('maps UNEXPECTED_TOOL_CALL to failed', () => {
+      expect(mapFinishReason(FinishReason.UNEXPECTED_TOOL_CALL)).toBe('failed');
+    });
+  
+    it('maps NO_IMAGE to failed', () => {
+      expect(mapFinishReason(FinishReason.NO_IMAGE)).toBe('failed');
     });
   });
 });

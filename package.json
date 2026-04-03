@@ -136,6 +136,8 @@
     "yargs": "^17.7.2"
   },
   "dependencies": {
+    "@google/adk": "^0.6.1",
+    "@opentelemetry/resource-detector-gcp": "^0.49.0",
     "ink": "npm:@jrichman/ink@6.5.0",
     "latest-version": "^9.0.0",
     "node-fetch-native": "^1.6.7",
