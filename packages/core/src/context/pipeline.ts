@@ -8,19 +8,19 @@ export interface ContextAccountingState {
   readonly currentTokens: number;
   readonly maxTokens: number;
   readonly retainedTokens: number;
-  
-  /** 
+
+  /**
    * Index in the episodes array where the "front buffer" begins.
    * Everything after this index is considered recent and highly protected.
    */
-  readonly frontBufferStartIndex: number; 
-  
+  readonly frontBufferStartIndex: number;
+
   /**
    * Index in the episodes array where the "back buffer" ends.
    * Everything before this index is considered old and ripe for gradual degradation.
    */
-  readonly backBufferEndIndex: number;    
-  
+  readonly backBufferEndIndex: number;
+
   /**
    * True if currentTokens <= retainedTokens.
    * Processors should generally exit early if this is true.
@@ -42,12 +42,12 @@ export interface ContextProcessorResult {
 export interface ContextProcessor {
   /** Unique name for telemetry and logging. */
   readonly name: string;
-  
+
   /**
    * Processes the episodic history payload based on the current accounting state.
    */
   process(
-    episodes: Episode[], 
-    state: ContextAccountingState
+    episodes: Episode[],
+    state: ContextAccountingState,
   ): Promise<ContextProcessorResult>;
 }

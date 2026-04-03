@@ -34,7 +34,7 @@ export class ContextManager {
 
     let currentEpisodes = IrMapper.toIr(history);
     let currentTokens = this.calculateIrTokens(currentEpisodes);
-    
+
     if (currentTokens <= maxTokens) {
       return history;
     }
@@ -44,7 +44,10 @@ export class ContextManager {
     );
 
     const protectedEpisodes = 1;
-    const frontBufferStartIndex = Math.max(0, currentEpisodes.length - protectedEpisodes);
+    const frontBufferStartIndex = Math.max(
+      0,
+      currentEpisodes.length - protectedEpisodes,
+    );
     const backBufferEndIndex = Math.max(0, frontBufferStartIndex - 1);
 
     for (const processor of this.processors) {
@@ -67,7 +70,7 @@ export class ContextManager {
 
       currentEpisodes = result.episodes;
       const newTokens = this.calculateIrTokens(currentEpisodes);
-      
+
       if (newTokens < currentTokens) {
         debugLogger.log(
           `Processor [${processor.name}] saved approx ${currentTokens - newTokens} tokens. New estimate: ${newTokens}.`,

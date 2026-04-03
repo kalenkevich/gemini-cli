@@ -39,8 +39,12 @@ export class ToolMaskingProcessor implements ContextProcessor {
     this.config = config;
   }
 
-  async process(episodes: Episode[], state: ContextAccountingState): Promise<ContextProcessorResult> {
-        const maskingConfig = this.config.getContextManagementConfig().tools.outputMasking;
+  async process(
+    episodes: Episode[],
+    state: ContextAccountingState,
+  ): Promise<ContextProcessorResult> {
+    const maskingConfig =
+      this.config.getContextManagementConfig().tools.outputMasking;
     if (!maskingConfig) return { episodes };
     if (state.isBudgetSatisfied) return { episodes };
 
@@ -48,7 +52,6 @@ export class ToolMaskingProcessor implements ContextProcessor {
     let cumulativeToolTokens = 0;
     let protectionBoundaryReached = false;
     let totalPrunableTokens = 0;
-    
 
     const prunableParts: Array<{
       epIndex: number;
@@ -58,7 +61,10 @@ export class ToolMaskingProcessor implements ContextProcessor {
       originalStep: any;
     }> = [];
 
-    const scanStartIdx = Math.min(state.backBufferEndIndex, newEpisodes.length - 1);
+    const scanStartIdx = Math.min(
+      state.backBufferEndIndex,
+      newEpisodes.length - 1,
+    );
 
     for (let i = scanStartIdx; i >= 0; i--) {
       const ep = newEpisodes[i];
@@ -71,21 +77,45 @@ export class ToolMaskingProcessor implements ContextProcessor {
         const toolName = step.toolName;
         if (toolName && UNMASKABLE_TOOLS.has(toolName)) continue;
 
-        const toolOutputContent = typeof step.observation === 'object' && step.observation ? JSON.stringify(step.observation, null, 2) : String(step.observation || '');
-        if (!toolOutputContent || this.isAlreadyMasked(toolOutputContent)) continue;
+        const toolOutputContent =
+          typeof step.observation === 'object' && step.observation
+            ? JSON.stringify(step.observation, null, 2)
+            : String(step.observation || '');
+        if (!toolOutputContent || this.isAlreadyMasked(toolOutputContent))
+          continue;
 
-        const partTokens = estimateTokenCountSync([{ functionResponse: { name: toolName, response: step.observation as any, id: step.id } }]);
+        const partTokens = estimateTokenCountSync([
+          {
+            functionResponse: {
+              name: toolName,
+              response: step.observation as any,
+              id: step.id,
+            },
+          },
+        ]);
 
         if (!protectionBoundaryReached) {
           cumulativeToolTokens += partTokens;
           if (cumulativeToolTokens > maskingConfig.protectionThresholdTokens) {
             protectionBoundaryReached = true;
             totalPrunableTokens += partTokens;
-            prunableParts.push({ epIndex: i, stepIndex: j, tokens: partTokens, content: toolOutputContent, originalStep: step });
+            prunableParts.push({
+              epIndex: i,
+              stepIndex: j,
+              tokens: partTokens,
+              content: toolOutputContent,
+              originalStep: step,
+            });
           }
         } else {
           totalPrunableTokens += partTokens;
-          prunableParts.push({ epIndex: i, stepIndex: j, tokens: partTokens, content: toolOutputContent, originalStep: step });
+          prunableParts.push({
+            epIndex: i,
+            stepIndex: j,
+            tokens: partTokens,
+            content: toolOutputContent,
+            originalStep: step,
+          });
         }
       }
     }
@@ -94,10 +124,16 @@ export class ToolMaskingProcessor implements ContextProcessor {
       return { episodes: newEpisodes };
     }
 
-    let toolOutputsDir = path.join(this.config.storage.getProjectTempDir(), 'tool-outputs');
+    let toolOutputsDir = path.join(
+      this.config.storage.getProjectTempDir(),
+      'tool-outputs',
+    );
     const sessionId = this.config.getSessionId();
     if (sessionId) {
-      toolOutputsDir = path.join(toolOutputsDir, `session-${sanitizeFilenamePart(sessionId)}`);
+      toolOutputsDir = path.join(
+        toolOutputsDir,
+        `session-${sanitizeFilenamePart(sessionId)}`,
+      );
     }
     await fsPromises.mkdir(toolOutputsDir, { recursive: true });
 
@@ -112,25 +148,37 @@ export class ToolMaskingProcessor implements ContextProcessor {
 
       await fsPromises.writeFile(filePath, content, 'utf-8');
 
-      const fileSizeMB = (Buffer.byteLength(content, 'utf8') / 1024 / 1024).toFixed(2);
+      const fileSizeMB = (
+        Buffer.byteLength(content, 'utf8') /
+        1024 /
+        1024
+      ).toFixed(2);
       const totalLines = content.split('\n').length;
-      
+
       const maskedSnippet = `<tool_output_masked>\n[Tool output (${fileSizeMB}MB, ${totalLines} lines) masked to preserve context window. Full output saved to: ${filePath}]\n</tool_output_masked>`;
 
-      step.observation = { ...step.observation, output: maskedSnippet };
-      delete step._rawResponsePart; // Force mapper to use the new observation
-      
-      const newTaskTokens = estimateTokenCountSync([{ functionResponse: { name: toolName, response: step.observation as any, id: step.id } }]);
+      const newTaskTokens = estimateTokenCountSync([
+        {
+          functionResponse: {
+            name: toolName,
+            response: { ...(step.observation as any), output: maskedSnippet },
+            id: step.id,
+          },
+        },
+      ]);
+      step.presentation = {
+        observation: { ...(step.observation as any), output: maskedSnippet },
+        tokens: newTaskTokens,
+      };
       const savings = tokens - newTaskTokens;
 
       if (savings > 0) {
-        
         step.metadata.currentTokens = newTaskTokens;
         step.metadata.transformations.push({
           processorName: 'ToolMasking',
           action: 'MASKED',
           timestamp: Date.now(),
-          diskPointer: filePath
+          diskPointer: filePath,
         });
       }
     }
@@ -138,7 +186,6 @@ export class ToolMaskingProcessor implements ContextProcessor {
     return { episodes: newEpisodes };
   }
 
-  
   private isAlreadyMasked(content: string): boolean {
     return content.includes('<tool_output_masked>');
   }

@@ -742,9 +742,7 @@ describe('Gemini Client (client.ts)', () => {
       await fromAsync(stream);
 
       // Assert
-      expect(manageHistorySpy).toHaveBeenCalledWith(
-        expect.any(Array),
-      );
+      expect(manageHistorySpy).toHaveBeenCalledWith(expect.any(Array));
     });
 
     it('emits a compression event when the context was automatically compressed', async () => {

@@ -2390,8 +2390,6 @@ export class Config implements McpContext, AgentLoopContext {
     return this.contextManagement;
   }
 
-  
-
   isTopicUpdateNarrationEnabled(): boolean {
     return this.topicUpdateNarration;
   }

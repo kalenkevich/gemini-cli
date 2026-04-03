@@ -1,3 +1,4 @@
+import { estimateTokenCountSync } from '../../utils/tokenCalculation.js';
 /**
  * @license
  * Copyright 2026 Google LLC
@@ -79,7 +80,8 @@ export class SemanticCompressionProcessor implements ContextProcessor {
     let userPrompt = 'Please refer to the history.';
     for (let i = episodes.length - 1; i >= 0; i--) {
       if (episodes[i].trigger.type === 'USER_PROMPT') {
-        userPrompt = (episodes[i].trigger as any).text || 'Please refer to the history.';
+        userPrompt =
+          (episodes[i].trigger as any).text || 'Please refer to the history.';
         break;
       }
     }
@@ -134,18 +136,30 @@ export class SemanticCompressionProcessor implements ContextProcessor {
     for (let i = 0; i < episodes.length; i++) {
       const ep = episodes[i];
       for (const step of ep.steps) {
-        if (step.type === 'TOOL_EXECUTION' && (step.toolName === 'read_file' || step.toolName === 'read_many_files')) {
+        if (
+          step.type === 'TOOL_EXECUTION' &&
+          (step.toolName === 'read_file' || step.toolName === 'read_many_files')
+        ) {
           if (i >= cutoff) {
-             const intent = step.intent;
-             if (intent['filepath'] && typeof intent['filepath'] === 'string') protectedFiles.add(intent['filepath']);
-             if (Array.isArray(intent['paths'])) intent['paths'].forEach((p: string) => protectedFiles.add(p));
+            const intent = step.intent;
+            if (intent['filepath'] && typeof intent['filepath'] === 'string')
+              protectedFiles.add(intent['filepath']);
+            if (Array.isArray(intent['paths']))
+              intent['paths'].forEach((p: string) => protectedFiles.add(p));
           }
         }
       }
     }
 
     // Pass 2: Collect files needing routing decisions
-    type PendingFile = { filepath: string; rawContent: string; contentToProcess: string; lines: string[]; preview: string; lineCount: number; };
+    type PendingFile = {
+      filepath: string;
+      rawContent: string;
+      contentToProcess: string;
+      lines: string[];
+      preview: string;
+      lineCount: number;
+    };
     const pendingFiles: PendingFile[] = [];
     const pendingFilesSet = new Set<string>();
 
@@ -153,9 +167,16 @@ export class SemanticCompressionProcessor implements ContextProcessor {
       const ep = episodes[i];
       for (const step of ep.steps) {
         if (step.type !== 'TOOL_EXECUTION') continue;
-        if (step.toolName !== 'read_file' && step.toolName !== 'read_many_files') continue;
+        if (
+          step.toolName !== 'read_file' &&
+          step.toolName !== 'read_many_files'
+        )
+          continue;
 
-        const output = typeof step.observation === 'object' && step.observation ? step.observation['output'] : null;
+        const output =
+          typeof step.observation === 'object' && step.observation
+            ? step.observation['output']
+            : null;
         if (!output || typeof output !== 'string') continue;
 
         const match = output.match(/--- (.+?) ---\n/);
@@ -163,14 +184,20 @@ export class SemanticCompressionProcessor implements ContextProcessor {
         if (match) filepath = match[1];
         else {
           const lines = output.split('\n');
-          if (lines[0] && lines[0].includes('---')) filepath = lines[0].replace(/---/g, '').trim();
+          if (lines[0] && lines[0].includes('---'))
+            filepath = lines[0].replace(/---/g, '').trim();
         }
 
         if (!filepath || protectedFiles.has(filepath)) continue;
 
         const hash = hashStringSlice(output);
         const existing = this.state.get(filepath);
-        if (existing?.level === 'SUMMARY' && existing.cachedSummary && existing.contentHash === hash) continue;
+        if (
+          existing?.level === 'SUMMARY' &&
+          existing.cachedSummary &&
+          existing.contentHash === hash
+        )
+          continue;
 
         if (pendingFilesSet.has(filepath)) continue;
         pendingFilesSet.add(filepath);
@@ -178,25 +205,42 @@ export class SemanticCompressionProcessor implements ContextProcessor {
         let contentToProcess = output;
         if (contentToProcess.startsWith('--- ')) {
           const firstNewline = contentToProcess.indexOf('\n');
-          if (firstNewline !== -1) contentToProcess = contentToProcess.substring(firstNewline + 1);
+          if (firstNewline !== -1)
+            contentToProcess = contentToProcess.substring(firstNewline + 1);
         }
         const lines = contentToProcess.split('\n');
 
-        pendingFiles.push({ filepath, rawContent: output, contentToProcess, lines, preview: lines.slice(0, 30).join('\n'), lineCount: lines.length });
+        pendingFiles.push({
+          filepath,
+          rawContent: output,
+          contentToProcess,
+          lines,
+          preview: lines.slice(0, 30).join('\n'),
+          lineCount: lines.length,
+        });
       }
     }
 
     const routingDecisions = await this.batchQueryModel(
-      pendingFiles.map((f) => ({ filepath: f.filepath, lineCount: f.lineCount, preview: f.preview })),
+      pendingFiles.map((f) => ({
+        filepath: f.filepath,
+        lineCount: f.lineCount,
+        preview: f.preview,
+      })),
       userPrompt,
       abortSignal,
     );
 
     for (const f of pendingFiles) {
-      const decision = routingDecisions.get(f.filepath) ?? { level: 'FULL' as FileLevel };
-      const record = this.state.get(f.filepath) ?? { level: 'FULL' as FileLevel };
+      const decision = routingDecisions.get(f.filepath) ?? {
+        level: 'FULL' as FileLevel,
+      };
+      const record = this.state.get(f.filepath) ?? {
+        level: 'FULL' as FileLevel,
+      };
       const hash = hashStringSlice(f.rawContent);
-      if (record.contentHash && record.contentHash !== hash) record.cachedSummary = undefined;
+      if (record.contentHash && record.contentHash !== hash)
+        record.cachedSummary = undefined;
       record.contentHash = hash;
       record.level = decision.level;
       record.startLine = decision.startLine;
@@ -217,7 +261,11 @@ export class SemanticCompressionProcessor implements ContextProcessor {
       for (let j = 0; j < ep.steps.length; j++) {
         const step = ep.steps[j];
         if (step.type === 'TOOL_EXECUTION') {
-           ep.steps[j] = await this.applyCompressionDecision(step, protectedFiles, abortSignal);
+          ep.steps[j] = await this.applyCompressionDecision(
+            step,
+            protectedFiles,
+            abortSignal,
+          );
         }
       }
       result.push(ep);
@@ -231,9 +279,13 @@ export class SemanticCompressionProcessor implements ContextProcessor {
     protectedFiles: Set<string>,
     abortSignal?: AbortSignal,
   ): Promise<ToolExecution> {
-    if (step.toolName !== 'read_file' && step.toolName !== 'read_many_files') return step;
+    if (step.toolName !== 'read_file' && step.toolName !== 'read_many_files')
+      return step;
 
-    const output = typeof step.observation === 'object' && step.observation ? step.observation['output'] : null;
+    const output =
+      typeof step.observation === 'object' && step.observation
+        ? step.observation['output']
+        : null;
     if (!output || typeof output !== 'string') return step;
 
     const match = output.match(/--- (.+?) ---\n/);
@@ -241,7 +293,8 @@ export class SemanticCompressionProcessor implements ContextProcessor {
     if (match) filepath = match[1];
     else {
       const lines = output.split('\n');
-      if (lines[0] && lines[0].includes('---')) filepath = lines[0].replace(/---/g, '').trim();
+      if (lines[0] && lines[0].includes('---'))
+        filepath = lines[0].replace(/---/g, '').trim();
       else return step;
     }
 
@@ -253,7 +306,8 @@ export class SemanticCompressionProcessor implements ContextProcessor {
     let contentToProcess = output;
     if (contentToProcess.startsWith('--- ')) {
       const firstNewline = contentToProcess.indexOf('\n');
-      if (firstNewline !== -1) contentToProcess = contentToProcess.substring(firstNewline + 1);
+      if (firstNewline !== -1)
+        contentToProcess = contentToProcess.substring(firstNewline + 1);
     }
     const lines = contentToProcess.split('\n');
     let compressed: string;
@@ -261,11 +315,18 @@ export class SemanticCompressionProcessor implements ContextProcessor {
     if (record.level === 'PARTIAL' && record.startLine && record.endLine) {
       const start = Math.max(0, record.startLine - 1);
       const end = Math.min(lines.length, record.endLine);
-      const snippet = lines.slice(start, end).map((l, i) => `${start + i + 1} | ${l}`).join('\n');
+      const snippet = lines
+        .slice(start, end)
+        .map((l, i) => `${start + i + 1} | ${l}`)
+        .join('\n');
       compressed = `[Showing lines ${record.startLine}–${record.endLine} of ${lines.length} in ${path.basename(filepath)}. Full file available via read_file.]\n\n${snippet}`;
     } else if (record.level === 'SUMMARY') {
       if (!record.cachedSummary) {
-        record.cachedSummary = await this.generateSummary(filepath, contentToProcess, abortSignal);
+        record.cachedSummary = await this.generateSummary(
+          filepath,
+          contentToProcess,
+          abortSignal,
+        );
         this.state.set(filepath, record);
         await this.saveState();
       }
@@ -278,14 +339,27 @@ export class SemanticCompressionProcessor implements ContextProcessor {
 
     if (compressed === output) return step;
 
-    const newStep = { ...step, observation: { ...(step.observation as any), output: compressed } };
-    delete newStep._rawResponsePart;
+    const newObservation = { ...(step.observation as any), output: compressed };
+    const newTaskTokens = estimateTokenCountSync([
+      {
+        functionResponse: {
+          name: step.toolName,
+          response: newObservation,
+          id: step.id,
+        },
+      },
+    ]);
+
+    const newStep = {
+      ...step,
+      presentation: { observation: newObservation, tokens: newTaskTokens },
+    };
     newStep.metadata.transformations.push({
       processorName: 'SemanticCompression',
       action: 'SUMMARIZED',
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
-    
+
     return newStep as ToolExecution;
   }
 
@@ -302,16 +376,17 @@ export class SemanticCompressionProcessor implements ContextProcessor {
 
     if (files.length === 0) return results;
 
-    const systemPrompt = 'You are a context routing agent for a coding AI session.\n' +
-'For each file listed, decide what level of content to send to the main model.\n' +
-'Levels: FULL, PARTIAL (with line range), SUMMARY, EXCLUDED.\n' +
-'Rules:\n' +
-'- FULL if the file is directly relevant to the query or small (<80 lines)\n' +
-'- PARTIAL if only a specific section is needed — provide start_line and end_line\n' +
-'- SUMMARY for background context files not directly needed\n' +
-'- EXCLUDED for completely unrelated files\n' +
-'Respond ONLY with a JSON object where each key is the filepath and the value is:\n' +
-'{"level":"FULL"|"PARTIAL"|"SUMMARY"|"EXCLUDED","start_line":null,"end_line":null}';
+    const systemPrompt =
+      'You are a context routing agent for a coding AI session.\n' +
+      'For each file listed, decide what level of content to send to the main model.\n' +
+      'Levels: FULL, PARTIAL (with line range), SUMMARY, EXCLUDED.\n' +
+      'Rules:\n' +
+      '- FULL if the file is directly relevant to the query or small (<80 lines)\n' +
+      '- PARTIAL if only a specific section is needed — provide start_line and end_line\n' +
+      '- SUMMARY for background context files not directly needed\n' +
+      '- EXCLUDED for completely unrelated files\n' +
+      'Respond ONLY with a JSON object where each key is the filepath and the value is:\n' +
+      '{"level":"FULL"|"PARTIAL"|"SUMMARY"|"EXCLUDED","start_line":null,"end_line":null}';
 
     const fileList = files
       .map(

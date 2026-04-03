@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 import type {
   Episode,
   IrMetadata,
+  SemanticPart,
   ToolExecution,
   AgentThought,
   AgentYield,
@@ -46,14 +47,13 @@ export class IrMapper {
       if (!msg.parts) continue;
 
       if (msg.role === 'user') {
-        // User messages can be either Triggers (new Episode) or Tool Responses (continuation of current Episode steps)
         const hasToolResponses = msg.parts.some((p) => !!p.functionResponse);
-        const hasTextParts = msg.parts.some((p) => !!p.text);
+        const hasUserParts = msg.parts.some(
+          (p) => !!p.text || !!p.inlineData || !!p.fileData,
+        );
 
         if (hasToolResponses) {
-          // It's a tool response. Bind it to pending calls.
           if (!currentEpisode) {
-            // Edge case: history starts with a tool response. Create a dummy episode.
             currentEpisode = {
               id: randomUUID(),
               timestamp: Date.now(),
@@ -72,34 +72,70 @@ export class IrMapper {
             if (part.functionResponse) {
               const callId = part.functionResponse.id || '';
               const matchingCall = pendingCallParts.get(callId);
-              
+
+              const intentTokens = matchingCall
+                ? estimateTokenCountSync([matchingCall])
+                : 0;
+              const obsTokens = estimateTokenCountSync([part]);
+
               const step: ToolExecution = {
                 id: randomUUID(),
                 type: 'TOOL_EXECUTION',
                 toolName: part.functionResponse.name || 'unknown',
-                intent: (matchingCall?.functionCall?.args as Record<string, unknown>) || {},
-                observation: (part.functionResponse.response as Record<string, unknown>) || {},
-                metadata: createMetadata(matchingCall ? [matchingCall, part] : [part]),
-                _rawCallPart: matchingCall,
-                _rawResponsePart: part,
+                intent:
+                  (matchingCall?.functionCall?.args as Record<
+                    string,
+                    unknown
+                  >) || {},
+                observation:
+                  (part.functionResponse.response as Record<string, unknown>) ||
+                  {},
+                tokens: {
+                  intent: intentTokens,
+                  observation: obsTokens,
+                },
+                metadata: {
+                  originalTokens: intentTokens + obsTokens,
+                  currentTokens: intentTokens + obsTokens,
+                  transformations: [],
+                },
               };
               currentEpisode.steps!.push(step);
               if (callId) pendingCallParts.delete(callId);
             }
           }
-        } 
-        
-        if (hasTextParts) {
-          // This is a genuine User Prompt. It begins a new episode.
+        }
+
+        if (hasUserParts) {
           finalizeEpisode();
-          
-          const textParts = msg.parts.filter(p => !!p.text).map(p => p.text).join('\n');
+
+          const semanticParts: SemanticPart[] = [];
+          for (const p of msg.parts) {
+            if (p.text !== undefined)
+              semanticParts.push({ type: 'text', text: p.text });
+            else if (p.inlineData)
+              semanticParts.push({
+                type: 'inline_data',
+                mimeType: p.inlineData.mimeType || '',
+                data: p.inlineData.data || '',
+              });
+            else if (p.fileData)
+              semanticParts.push({
+                type: 'file_data',
+                mimeType: p.fileData.mimeType || '',
+                fileUri: p.fileData.fileUri || '',
+              });
+            else if (!p.functionResponse)
+              semanticParts.push({ type: 'raw_part', part: p }); // Preserve unknowns
+          }
+
           const trigger: UserPrompt = {
             id: randomUUID(),
             type: 'USER_PROMPT',
-            text: textParts,
-            parts: msg.parts, // Keep all raw parts (e.g. images) attached
-            metadata: createMetadata(msg.parts),
+            semanticParts,
+            metadata: createMetadata(
+              msg.parts.filter((p) => !p.functionResponse),
+            ),
           };
 
           currentEpisode = {
@@ -111,11 +147,16 @@ export class IrMapper {
         }
       } else if (msg.role === 'model') {
         if (!currentEpisode) {
-          // Should rarely happen unless history is malformed, but handle it gracefully
           currentEpisode = {
             id: randomUUID(),
             timestamp: Date.now(),
-            trigger: { id: randomUUID(), type: 'SYSTEM_EVENT', name: 'model_init', payload: {}, metadata: createMetadata([]) },
+            trigger: {
+              id: randomUUID(),
+              type: 'SYSTEM_EVENT',
+              name: 'model_init',
+              payload: {},
+              metadata: createMetadata([]),
+            },
             steps: [],
           };
         }
@@ -125,11 +166,6 @@ export class IrMapper {
             const callId = part.functionCall.id || '';
             if (callId) pendingCallParts.set(callId, part);
           } else if (part.text) {
-            // Is this an AgentThought (intermediate reasoning) or an AgentYield (final response)?
-            // For now, we assume if it's the last thing before a UserPrompt, it's a Yield.
-            // But structurally in a single model turn, it's an AgentThought unless the episode ends.
-            // Let's treat all text as AgentThought during the run. The finalizer can promote the last thought to a Yield if desired.
-            
             const thought: AgentThought = {
               id: randomUUID(),
               type: 'AGENT_THOUGHT',
@@ -142,19 +178,18 @@ export class IrMapper {
       }
     }
 
-    // Promote the very last thought of an episode to a Yield
     if (currentEpisode) {
       if (currentEpisode.steps && currentEpisode.steps.length > 0) {
         const lastStep = currentEpisode.steps[currentEpisode.steps.length - 1];
         if (lastStep.type === 'AGENT_THOUGHT') {
-           const yieldNode: AgentYield = {
-             id: lastStep.id,
-             type: 'AGENT_YIELD',
-             text: lastStep.text,
-             metadata: lastStep.metadata
-           };
-           currentEpisode.steps.pop();
-           currentEpisode.yield = yieldNode;
+          const yieldNode: AgentYield = {
+            id: lastStep.id,
+            type: 'AGENT_YIELD',
+            text: lastStep.text,
+            metadata: lastStep.metadata,
+          };
+          currentEpisode.steps.pop();
+          currentEpisode.yield = yieldNode;
         }
       }
       finalizeEpisode();
@@ -172,12 +207,24 @@ export class IrMapper {
     for (const ep of episodes) {
       // 1. Serialize Trigger
       if (ep.trigger.type === 'USER_PROMPT') {
-        history.push({ role: 'user', parts: ep.trigger.parts });
+        const parts: Part[] = [];
+        for (const sp of ep.trigger.semanticParts) {
+          if (sp.type === 'text')
+            parts.push({ text: sp.presentation?.text ?? sp.text });
+          else if (sp.type === 'inline_data')
+            parts.push({
+              inlineData: { mimeType: sp.mimeType, data: sp.data },
+            });
+          else if (sp.type === 'file_data')
+            parts.push({
+              fileData: { mimeType: sp.mimeType, fileUri: sp.fileUri },
+            });
+          else if (sp.type === 'raw_part') parts.push(sp.part as Part);
+        }
+        if (parts.length > 0) history.push({ role: 'user', parts });
       }
 
       // 2. Serialize Steps
-      // Gemini expects Model(calls) then User(responses).
-      // If we have multiple consecutive ToolExecutions, we group the calls, then group the responses.
       let pendingModelParts: Part[] = [];
       let pendingUserParts: Part[] = [];
 
@@ -195,24 +242,38 @@ export class IrMapper {
       for (const step of ep.steps) {
         if (step.type === 'AGENT_THOUGHT') {
           flushPending();
-          history.push({ role: 'model', parts: [{ text: step.text }] });
+          history.push({
+            role: 'model',
+            parts: [{ text: step.presentation?.text ?? step.text }],
+          });
         } else if (step.type === 'TOOL_EXECUTION') {
-          if (step._rawCallPart) pendingModelParts.push(step._rawCallPart);
-          else {
-            pendingModelParts.push({ functionCall: { name: step.toolName, args: step.intent as any, id: step.id } });
-          }
-
-          if (step._rawResponsePart) pendingUserParts.push(step._rawResponsePart);
-          else {
-             pendingUserParts.push({ functionResponse: { name: step.toolName, response: step.observation as any, id: step.id } });
-          }
+          pendingModelParts.push({
+            functionCall: {
+              name: step.toolName,
+              args: step.intent as any,
+              id: step.id,
+            },
+          });
+          const observation = step.presentation
+            ? step.presentation.observation
+            : step.observation;
+          pendingUserParts.push({
+            functionResponse: {
+              name: step.toolName,
+              response: observation as any,
+              id: step.id,
+            },
+          });
         }
       }
       flushPending();
 
       // 3. Serialize Yield
       if (ep.yield) {
-        history.push({ role: 'model', parts: [{ text: ep.yield.text }] });
+        history.push({
+          role: 'model',
+          parts: [{ text: ep.yield.presentation?.text ?? ep.yield.text }],
+        });
       }
     }
 

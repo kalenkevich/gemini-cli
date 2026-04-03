@@ -24,18 +24,18 @@ export class HistorySquashingProcessor implements ContextProcessor {
     episodes: Episode[],
     state: ContextAccountingState,
   ): Promise<ContextProcessorResult> {
-        if (state.isBudgetSatisfied) {
+    if (state.isBudgetSatisfied) {
       return { episodes };
     }
 
     const { normalMaxTokens, retainedMaxTokens, normalizationHeadRatio } =
       this.config.getContextManagementConfig().messageLimits;
 
-    const limit = state.backBufferEndIndex >= 0 ? retainedMaxTokens : normalMaxTokens;
+    const limit =
+      state.backBufferEndIndex >= 0 ? retainedMaxTokens : normalMaxTokens;
     const ratio = normalizationHeadRatio || 0.15;
     void ratio; // satisfy linter
 
-    
     const newEpisodes = [...episodes];
 
     for (let i = 0; i <= state.backBufferEndIndex; i++) {
@@ -43,20 +43,29 @@ export class HistorySquashingProcessor implements ContextProcessor {
       if (!ep) continue;
 
       if (ep.trigger.type === 'USER_PROMPT') {
-        const text = ep.trigger.text;
-        const originalLength = text.length;
-        if (originalLength > limit * 4) {
-          const truncated = truncateProportionally(text, limit * 4, `\n\n[... OMITTED ${originalLength - limit * 4} chars ...]\n\n`);
-          if (truncated !== text) {
-            ep.trigger.text = truncated;
-            if (ep.trigger.parts) {
-               ep.trigger.parts = [{ text: truncated }]; // override parts for mapping
+        for (let j = 0; j < ep.trigger.semanticParts.length; j++) {
+          const part = ep.trigger.semanticParts[j];
+          if (part.type !== 'text') continue;
+
+          const text = part.text;
+          const originalLength = text.length;
+          if (originalLength > limit * 4) {
+            const newText = truncateProportionally(
+              text,
+              limit * 4,
+              `\n\n[... OMITTED ${originalLength - limit * 4} chars ...]\n\n`,
+            );
+            if (newText !== text) {
+              part.presentation = {
+                text: newText,
+                tokens: Math.floor(newText.length / 4),
+              };
+              ep.trigger.metadata.transformations.push({
+                processorName: 'HistorySquashing',
+                action: 'TRUNCATED',
+                timestamp: Date.now(),
+              });
             }
-            ep.trigger.metadata.transformations.push({
-              processorName: 'HistorySquashing',
-              action: 'TRUNCATED',
-              timestamp: Date.now()
-            });
           }
         }
       }

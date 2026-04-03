@@ -30,7 +30,7 @@ ong long time ago, A long long time ago, A long long time ago, A long long time 
       {
         "functionCall": {
           "args": {},
-          "id": "893a40f9-12e1-4ccb-bccf-8d7a7328d0f8",
+          "id": "3798f145-9bb6-444e-b776-d3978d69f50a",
           "name": "some_tool",
         },
       },
@@ -41,11 +41,11 @@ ong long time ago, A long long time ago, A long long time ago, A long long time 
     "parts": [
       {
         "functionResponse": {
-          "id": "893a40f9-12e1-4ccb-bccf-8d7a7328d0f8",
+          "id": "3798f145-9bb6-444e-b776-d3978d69f50a",
           "name": "some_tool",
           "response": {
             "output": "<tool_output_masked>
-[Tool output (0.01MB, 3 lines) masked to preserve context window. Full output saved to: /tmp/tool-outputs/session-mock-session/some_tool_893a40f9-12e1-4ccb-bccf-8d7a7328d0f8_.txt]
+[Tool output (0.01MB, 3 lines) masked to preserve context window. Full output saved to: /tmp/tool-outputs/session-mock-session/some_tool_3798f145-9bb6-444e-b776-d3978d69f50a_.txt]
 </tool_output_masked>",
           },
         },

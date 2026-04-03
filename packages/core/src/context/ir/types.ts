@@ -4,17 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { Part } from '@google/genai';
-
 /**
  * Universal Audit Metadata
- * Tracks the lifecycle and transformations of a node within the IR.
+ * Tracks the lifecycle and transformations of a node or part within the IR.
  * This guarantees perfect reversibility and enables long-term memory offloading.
  */
 export interface IrMetadata {
-  /** The estimated number of tokens this node originally consumed. */
+  /** The estimated number of tokens this entity originally consumed. */
   originalTokens: number;
-  /** The current estimated number of tokens this node consumes in its degraded state. */
+  /** The current estimated number of tokens this entity consumes in its degraded state. */
   currentTokens: number;
   /** An audit trail of all transformations applied by ContextProcessors. */
   transformations: Array<{
@@ -41,13 +39,29 @@ export interface IrNode {
 }
 
 /**
+ * Semantic Parts for User Prompts
+ * Ensures we can safely truncate text without deleting multi-modal parts (like images).
+ */
+export type SemanticPart =
+  | {
+      type: 'text';
+      text: string;
+      presentation?: { text: string; tokens: number };
+    }
+  // We can add inline_data, fileData, etc here later
+  | { type: 'inline_data'; mimeType: string; data: string }
+  | { type: 'file_data'; mimeType: string; fileUri: string }
+  // Catch-all for other unsupported Gemini Parts to prevent data loss
+  | { type: 'raw_part'; part: unknown };
+
+/**
  * Trigger Nodes
  * Events that wake the agent up and initiate an Episode.
  */
 export interface UserPrompt extends IrNode {
   readonly type: 'USER_PROMPT';
-  text: string;
-  parts: Part[]; // For multi-modal inputs (images, etc) attached by the user
+  /** The semantic breakdown of the user's multi-modal input */
+  semanticParts: SemanticPart[];
 }
 
 export interface SystemEvent extends IrNode {
@@ -65,19 +79,39 @@ export type EpisodeTrigger = UserPrompt | SystemEvent;
 export interface AgentThought extends IrNode {
   readonly type: 'AGENT_THOUGHT';
   text: string;
+  /** Overrides the rendered output for this thought */
+  presentation?: {
+    text: string;
+    tokens: number;
+  };
 }
 
 export interface ToolExecution extends IrNode {
   readonly type: 'TOOL_EXECUTION';
   /** The name of the tool invoked */
   toolName: string;
+
   /** The arguments passed to the tool (The 'FunctionCall') */
   intent: Record<string, unknown>;
+
   /** The result returned by the tool (The 'FunctionResponse') */
   observation: string | Record<string, unknown>;
-  /** Original raw parts for exact serialization if needed */
-  _rawCallPart?: Part;
-  _rawResponsePart?: Part;
+
+  /** Granular token tracking for the different lifecycle phases of the tool */
+  tokens: {
+    intent: number;
+    observation: number;
+  };
+
+  /**
+   * The presentation layer. If defined, the IrMapper uses this instead of the
+   * raw observation to build the functionResponse.
+   * This preserves the immutable raw data for semantic queries while modifying the rendered output.
+   */
+  presentation?: {
+    observation: string | Record<string, unknown>;
+    tokens: number; // The new token count of the presented observation
+  };
 }
 
 export type EpisodeStep = AgentThought | ToolExecution;
@@ -89,6 +123,10 @@ export type EpisodeStep = AgentThought | ToolExecution;
 export interface AgentYield extends IrNode {
   readonly type: 'AGENT_YIELD';
   text: string;
+  presentation?: {
+    text: string;
+    tokens: number;
+  };
 }
 
 /**
@@ -101,13 +139,13 @@ export interface Episode {
   readonly id: string;
   /** When the episode began */
   readonly timestamp: number;
-  
+
   /** The event that initiated this run */
   trigger: EpisodeTrigger;
-  
+
   /** The sequence of autonomous actions and observations */
   steps: EpisodeStep[];
-  
+
   /** The final handover back to the user (can be undefined if the episode was aborted/errored) */
   yield?: AgentYield;
 }

@@ -98,7 +98,7 @@ export class GeminiClient {
 
   private readonly loopDetector: LoopDetectionService;
   private readonly compressionService: ChatCompressionService;
-  
+
   private readonly contextManager: ContextManager;
   private readonly toolOutputMaskingService: ToolOutputMaskingService;
   private lastPromptId: string;
@@ -115,12 +115,12 @@ export class GeminiClient {
   constructor(private readonly context: AgentLoopContext) {
     this.loopDetector = new LoopDetectionService(this.config);
     this.compressionService = new ChatCompressionService();
-    
+
     this.contextManager = new ContextManager(this.config, this);
     this.contextManager.setProcessors([
       new ToolMaskingProcessor(this.config),
       new HistorySquashingProcessor(this.config),
-      new SemanticCompressionProcessor(this.config)
+      new SemanticCompressionProcessor(this.config),
     ]);
     this.toolOutputMaskingService = new ToolOutputMaskingService();
     this.lastPromptId = this.config.getSessionId();
@@ -623,9 +623,9 @@ export class GeminiClient {
     const modelForLimitCheck = this._getActiveModelForCurrentTurn();
 
     if (this.config.getContextManagementConfig().enabled) {
-      const newHistory = await this.contextManager.processHistory(
-        [...this.getHistory()]
-      );
+      const newHistory = await this.contextManager.processHistory([
+        ...this.getHistory(),
+      ]);
       // We check if the reference changed or if elements changed
       if (newHistory !== this.getHistory()) {
         this.getChat().setHistory(newHistory);
